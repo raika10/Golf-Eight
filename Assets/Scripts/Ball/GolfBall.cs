@@ -1,9 +1,10 @@
 using UnityEngine;
 
-/// ゴルフボール本体（ステージ1：物理的な振る舞いだけ）。
-/// ・地面や壁に当たると跳ねる
-/// ・転がって速度が落ちたら自然に止まる
-/// 打つ／色分け／透過表示／ゴール判定は次の段階で足していく。
+/// ゴルフボール本体。
+/// ・地面や壁に当たると跳ねる（ステージ1）
+/// ・転がって速度が落ちたら自然に止まる（ステージ1）
+/// ・打たれたら打った強さに応じて飛ぶ（ステージ2：Hit）
+/// 色分け／透過表示／ゴール判定は次の段階で足していく。
 [RequireComponent(typeof(Rigidbody))]
 [RequireComponent(typeof(SphereCollider))]
 public class GolfBall : MonoBehaviour
@@ -22,8 +23,11 @@ public class GolfBall : MonoBehaviour
     private SphereCollider sphere;
     private float slowTimer; // 遅い状態が続いている時間
 
-    /// いま動いているか（次の段階で「止まっている球だけ打てる」等に使う）。
+    /// いま動いているか（「止まっている球だけ打てる」判定などに使う）。
     public bool IsMoving => slowTimer < stopDuration;
+
+    /// 現在の質量（打った強さから初速を見積もるときに使う）。
+    public float Mass => body != null ? body.mass : 1f;
 
     private void Awake()
     {
@@ -51,6 +55,26 @@ public class GolfBall : MonoBehaviour
     private void Update()
     {
         UpdateStopState();
+    }
+
+    /// このボールを打つ。direction の向きに power の強さで飛ばす。
+    /// power が大きいほど初速が上がり飛距離が伸びる。誰が呼んでもよい（誰でも誰のボールを打てる）。
+    public void Hit(Vector3 direction, float power)
+    {
+        if (direction.sqrMagnitude < 0.0001f || power <= 0f)
+        {
+            return;
+        }
+
+        // 打つ瞬間に眠っていたら起こす。今の速度は打ち消して打った向きを優先する。
+        body.WakeUp();
+        body.linearVelocity = Vector3.zero;
+        body.angularVelocity = Vector3.zero;
+
+        // Impulse なので Δ速度 = power / 質量。強さがそのまま飛距離に効く。
+        body.AddForce(direction.normalized * power, ForceMode.Impulse);
+
+        slowTimer = 0f; // 動き出したので停止タイマーをリセット
     }
 
     /// 速度が十分に落ちたら「止まった」と判定し、微振動しないよう完全停止させる。
