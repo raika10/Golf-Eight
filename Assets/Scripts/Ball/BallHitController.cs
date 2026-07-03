@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -29,15 +30,18 @@ public class BallHitController : MonoBehaviour
     [SerializeField] private float maxPower = 22f;        // 最大の打つ強さ
     [SerializeField] private float chargeTime = 1.2f;     // 0→最大まで溜めるのにかかる時間 (s)
 
-    [Header("目安線")]
-    [SerializeField] private LineRenderer aimLine;        // 方向の目安線（未設定なら自動生成）
-    [SerializeField] private float aimLineMinLength = 1.5f; // 未チャージ時の線の長さ
-    [SerializeField] private float aimLineMaxLength = 6f;   // 最大チャージ時の線の長さ
+    [Header("予測線")]
+    [SerializeField] private LineRenderer aimLine;              // 予測線（未設定なら自動生成）
+    [SerializeField] private int predictionSteps = 60;         // 予測の分割数（多いほど長く・滑らか）
+    [SerializeField] private float predictionTimeStep = 0.04f; // 予測1ステップの時間 (s)
+    [SerializeField] private float predictionBounciness = 0.6f;// 跳ね返りで残る速度の割合（GolfBall側と合わせる）
+    [SerializeField] private LayerMask predictionObstacleMask = ~0; // 予測で跳ね返る対象（壁・地面など）
 
     private float currentYaw;      // 現在の水平の向き（度）
     private float currentCharge;   // 現在の溜め (0..1)
     private bool isCharging;       // 溜め中か
     private GolfBall targetBall;   // いま狙っているボール
+    private readonly List<Vector3> predictedPoints = new List<Vector3>();
     private static readonly Collider[] overlapBuffer = new Collider[32];
 
     private void Awake()
@@ -174,7 +178,8 @@ public class BallHitController : MonoBehaviour
         return Mathf.Lerp(minPower, maxPower, currentCharge);
     }
 
-    /// 方向の目安線（まっすぐ）を更新する。溜めるほど長くなる。
+    /// 予測線を更新する。重力と跳ね返りを含めて、打った後の軌道をシミュレートして描く。
+    /// 溜め中はその強さでの着弾予測、狙っているだけのときは最小強さで方向の目安を出す。
     private void UpdateAimLine()
     {
         if (aimLine == null)
@@ -189,15 +194,55 @@ public class BallHitController : MonoBehaviour
             return;
         }
 
-        float length = isCharging
-            ? Mathf.Lerp(aimLineMinLength, aimLineMaxLength, currentCharge)
-            : aimLineMinLength;
-
+        // Hit と同じく Impulse なので、打った直後の初速 = 強さ / 質量。
+        float power = isCharging ? CurrentPower() : minPower;
         Vector3 start = targetBall.transform.position;
-        Vector3 end = start + GetAimDirection() * length;
-        aimLine.positionCount = 2;
-        aimLine.SetPosition(0, start);
-        aimLine.SetPosition(1, end);
+        Vector3 initialVelocity = GetAimDirection() * (power / Mathf.Max(0.0001f, targetBall.Mass));
+
+        SimulateTrajectory(start, initialVelocity, targetBall.Radius, predictedPoints);
+        aimLine.positionCount = predictedPoints.Count;
+        aimLine.SetPositions(predictedPoints.ToArray());
+    }
+
+    /// 重力と跳ね返りを含めてボールの軌道を数値シミュレートし、点列を outPoints に入れる。
+    private void SimulateTrajectory(Vector3 start, Vector3 velocity, float radius, List<Vector3> outPoints)
+    {
+        outPoints.Clear();
+        Vector3 pos = start;
+        Vector3 vel = velocity;
+        float dt = predictionTimeStep;
+        float castRadius = Mathf.Max(0.01f, radius * 0.95f); // 壁にめり込む前に検出できるよう少し小さめ
+
+        outPoints.Add(pos);
+        for (int i = 0; i < predictionSteps; i++)
+        {
+            vel += Physics.gravity * dt;
+            Vector3 stepVec = vel * dt;
+            float dist = stepVec.magnitude;
+            if (dist < 1e-5f)
+            {
+                break;
+            }
+
+            Vector3 dir = stepVec / dist;
+            if (Physics.SphereCast(pos, castRadius, dir, out RaycastHit hit, dist, predictionObstacleMask, QueryTriggerInteraction.Ignore))
+            {
+                // 当たった面で反射（速度は反発ぶん減らす）
+                pos = hit.point + hit.normal * radius;
+                vel = Vector3.Reflect(vel, hit.normal) * predictionBounciness;
+                outPoints.Add(pos);
+
+                if (vel.magnitude < 0.5f)
+                {
+                    break; // ほぼ止まったら予測終了
+                }
+            }
+            else
+            {
+                pos += stepVec;
+                outPoints.Add(pos);
+            }
+        }
     }
 
     /// 目安線用の LineRenderer を用意する（未設定なら子オブジェクトに作る）。

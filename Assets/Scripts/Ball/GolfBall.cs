@@ -4,7 +4,8 @@ using UnityEngine;
 /// ・地面や壁に当たると跳ねる（ステージ1）
 /// ・転がって速度が落ちたら自然に止まる（ステージ1）
 /// ・打たれたら打った強さに応じて飛ぶ（ステージ2：Hit）
-/// 色分け／透過表示／ゴール判定は次の段階で足していく。
+/// ・自分のボールは物体に遮蔽されても透過シルエットで位置がわかる（ステージ5）
+/// 色分け／ゴール判定は次の段階で足していく。
 [RequireComponent(typeof(Rigidbody))]
 [RequireComponent(typeof(SphereCollider))]
 public class GolfBall : MonoBehaviour
@@ -19,15 +20,37 @@ public class GolfBall : MonoBehaviour
     [SerializeField] private float stopSpeed = 0.25f;     // この速さ以下がしばらく続いたら停止扱い (m/s)
     [SerializeField] private float stopDuration = 0.4f;   // stopSpeed 以下が続くべき時間 (s)
 
+    [Header("透過表示")]
+    [SerializeField] private bool ownedByLocalPlayer = false; // このボールがこの画面の操作者のものか
+    [SerializeField] private Renderer seeThroughRenderer;     // 遮蔽時に透過表示するシルエット用の子Renderer
+
     private Rigidbody body;
     private SphereCollider sphere;
     private float slowTimer; // 遅い状態が続いている時間
+
+    /// このボールがローカル操作者のものか。
+    public bool OwnedByLocalPlayer => ownedByLocalPlayer;
 
     /// いま動いているか（「止まっている球だけ打てる」判定などに使う）。
     public bool IsMoving => slowTimer < stopDuration;
 
     /// 現在の質量（打った強さから初速を見積もるときに使う）。
     public float Mass => body != null ? body.mass : 1f;
+
+    /// このボールの半径（ワールド実寸）。予測線のシミュレーションで使う。
+    public float Radius
+    {
+        get
+        {
+            if (sphere == null)
+            {
+                return 0.5f;
+            }
+            Vector3 s = transform.lossyScale;
+            float maxScale = Mathf.Max(Mathf.Abs(s.x), Mathf.Abs(s.y), Mathf.Abs(s.z));
+            return sphere.radius * maxScale;
+        }
+    }
 
     private void Awake()
     {
@@ -52,9 +75,30 @@ public class GolfBall : MonoBehaviour
         }
     }
 
+    private void Start()
+    {
+        ApplySeeThrough();
+    }
+
     private void Update()
     {
         UpdateStopState();
+    }
+
+    /// このボールを自分のもの（ローカル所有）にするか設定する。透過表示も切り替わる。
+    public void SetOwnedByLocalPlayer(bool local)
+    {
+        ownedByLocalPlayer = local;
+        ApplySeeThrough();
+    }
+
+    /// 透過シルエットは自分のボールのときだけ表示する。
+    private void ApplySeeThrough()
+    {
+        if (seeThroughRenderer != null)
+        {
+            seeThroughRenderer.enabled = ownedByLocalPlayer;
+        }
     }
 
     /// このボールを打つ。direction の向きに power の強さで飛ばす。
