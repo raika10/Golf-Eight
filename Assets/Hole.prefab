@@ -1,0 +1,104 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &4630549987112577541
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 3692840781725414016}
+  - component: {fileID: 5075481581494778257}
+  - component: {fileID: 3936650800179657453}
+  - component: {fileID: 2197755222871705812}
+  m_Layer: 0
+  m_Name: Hole
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &3692840781725414016
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4630549987112577541}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 4.27, y: 0, z: 7.795}
+  m_LocalScale: {x: 2, y: 2, z: 2}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!135 &5075481581494778257
+SphereCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4630549987112577541}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Radius: 0.45
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!114 &3936650800179657453
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4630549987112577541}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 89df62c2299a43b48b7a4cee0a3dee5a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GolfHole
+  captureSpeed: 3
+  captureRadius: 0.18
+  cupCenter: {fileID: 0}
+  lipRadius: 0.45
+  lipStrength: 12
+  lipDamping: 6
+  dropDepth: 0.18
+  alignTime: 0.12
+  dropTime: 0.22
+  onBallHoled:
+    m_PersistentCalls:
+      m_Calls: []
+--- !u!114 &2197755222871705812
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4630549987112577541}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3f1c8b7a4d5e42c9b0a1f6e3c8d94b27, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GolfHoleVisual
+  holeRadius: 0.12
+  rimWidth: 0.03
+  holeColor: {r: 0, g: 0, b: 0, a: 1}
+  rimColor: {r: 0.92, g: 0.92, b: 0.9, a: 1}
+  showFlag: 1
+  poleHeight: 1.4
+  poleRadius: 0.012
+  poleColliderClearance: 0.45
+  poleColor: {r: 0.85, g: 0.85, b: 0.85, a: 1}
+  flagSize: {x: 0.35, y: 0.22}
+  flagColor: {r: 0.85, g: 0.1, b: 0.1, a: 1}

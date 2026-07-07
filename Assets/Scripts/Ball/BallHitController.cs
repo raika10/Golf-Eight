@@ -153,7 +153,7 @@ public class BallHitController : MonoBehaviour
     /// そのボールをいま打てるか。
     private bool CanHit(GolfBall ball)
     {
-        if (ball == null)
+        if (ball == null || ball.IsHoled)
         {
             return false;
         }

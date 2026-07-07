@@ -5,7 +5,8 @@ using UnityEngine;
 /// ・転がって速度が落ちたら自然に止まる（ステージ1）
 /// ・打たれたら打った強さに応じて飛ぶ（ステージ2：Hit）
 /// ・自分のボールは物体に遮蔽されても透過シルエットで位置がわかる（ステージ5）
-/// 色分け／ゴール判定は次の段階で足していく。
+/// ・カップに入ったら静止して固定され、以降は打てなくなる（ステージ6：MarkHoled）
+/// 色分けは次の段階で足していく。
 [RequireComponent(typeof(Rigidbody))]
 [RequireComponent(typeof(SphereCollider))]
 public class GolfBall : MonoBehaviour
@@ -30,6 +31,9 @@ public class GolfBall : MonoBehaviour
 
     /// このボールがローカル操作者のものか。
     public bool OwnedByLocalPlayer => ownedByLocalPlayer;
+
+    /// カップインして固定されたか。true の間は打てない。
+    public bool IsHoled { get; private set; }
 
     /// いま動いているか（「止まっている球だけ打てる」判定などに使う）。
     public bool IsMoving => slowTimer < stopDuration;
@@ -60,6 +64,10 @@ public class GolfBall : MonoBehaviour
         // 転がって自然に止まるように抵抗を設定
         body.linearDamping = linearDamping;
         body.angularDamping = angularDamping;
+
+        // 連続衝突判定にする。旗竿のような細い障害物を速い球がすり抜けず、
+        // 予想線（掃引で当たり判定している）と実際の軌道が一致するようにする。
+        body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
 
         // 反発するPhysicsMaterialを実行時に用意（アセットを手で作らなくても跳ねる）
         if (sphere.sharedMaterial == null)
@@ -105,7 +113,7 @@ public class GolfBall : MonoBehaviour
     /// power が大きいほど初速が上がり飛距離が伸びる。誰が呼んでもよい（誰でも誰のボールを打てる）。
     public void Hit(Vector3 direction, float power)
     {
-        if (direction.sqrMagnitude < 0.0001f || power <= 0f)
+        if (IsHoled || direction.sqrMagnitude < 0.0001f || power <= 0f)
         {
             return;
         }
@@ -121,9 +129,39 @@ public class GolfBall : MonoBehaviour
         slowTimer = 0f; // 動き出したので停止タイマーをリセット
     }
 
+    /// カップインしたときに呼ぶ。速度を消してその場に固定し、以降は打てなくする。
+    /// 位置合わせ（カップ中心へ吸い込む）は呼び出し側（GolfHole）が済ませてから呼ぶ。
+    public void MarkHoled()
+    {
+        if (IsHoled)
+        {
+            return;
+        }
+        IsHoled = true;
+
+        // isKinematic にする前に速度をゼロにしておく
+        body.linearVelocity = Vector3.zero;
+        body.angularVelocity = Vector3.zero;
+        // kinematic では連続衝突判定が使えず警告になるので Discrete に戻してから固定する
+        body.collisionDetectionMode = CollisionDetectionMode.Discrete;
+        // 物理から切り離してカップの底で完全静止させる（縁に押し戻されて飛び出すのを防ぐ）
+        body.isKinematic = true;
+
+        // 地面の下に沈むので、透過シルエットが地面越しに光って見えないように消す
+        if (seeThroughRenderer != null)
+        {
+            seeThroughRenderer.enabled = false;
+        }
+    }
+
     /// 速度が十分に落ちたら「止まった」と判定し、微振動しないよう完全停止させる。
     private void UpdateStopState()
     {
+        if (IsHoled)
+        {
+            return;
+        }
+
         if (body.linearVelocity.magnitude <= stopSpeed)
         {
             slowTimer += Time.deltaTime;
