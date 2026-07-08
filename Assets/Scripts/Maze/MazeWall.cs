@@ -16,8 +16,8 @@ public class MazeWall : MonoBehaviour
     [Tooltip("破壊時に壁を破片に分割する")]
     public bool shatterOnDestroy = true;
 
-    [Tooltip("各軸方向の分割数（大きいほど細かく＝重くなる）")]
-    public Vector3Int fragmentCounts = new Vector3Int(3, 2, 1);
+    [Tooltip("破片1個あたりの目安サイズ（Unity単位）。小さいほど細かく＝重くなる。\n壁の実寸から分割数を自動計算するので、縦壁・横壁どちらも均一に割れる")]
+    public float fragmentSize = 0.5f;
 
     [Tooltip("破片を吹き飛ばす力")]
     public float explosionForce = 4f;
@@ -72,32 +72,50 @@ public class MazeWall : MonoBehaviour
         var mat = fragmentMaterial != null ? fragmentMaterial
                 : rend != null ? rend.sharedMaterial : null;
 
-        // ワールド空間での壁のサイズ（この壁は非回転のBoxを前提）
-        Vector3 wallSize = rend != null ? rend.bounds.size : transform.lossyScale;
-        Vector3 center = rend != null ? rend.bounds.center : transform.position;
+        // 壁の「ローカル座標系」で分割する（回転していてもワールド軸に引きずられない）。
+        // メッシュのローカル境界を基準にすることで、任意サイズ・任意回転の壁に追従する。
+        var mf = GetComponent<MeshFilter>();
+        Bounds localBounds = mf != null && mf.sharedMesh != null
+            ? mf.sharedMesh.bounds
+            : new Bounds(Vector3.zero, Vector3.one); // フォールバック: 単位キューブ
 
-        int nx = Mathf.Max(1, fragmentCounts.x);
-        int ny = Mathf.Max(1, fragmentCounts.y);
-        int nz = Mathf.Max(1, fragmentCounts.z);
-        Vector3 piece = new Vector3(wallSize.x / nx, wallSize.y / ny, wallSize.z / nz);
-        Vector3 origin = center - wallSize * 0.5f;
+        // 壁のワールド実寸から、破片が目安サイズに近づくよう分割数を自動決定
+        Vector3 worldSize = Vector3.Scale(localBounds.size, transform.lossyScale);
+        float s = Mathf.Max(0.05f, fragmentSize);
+        int nx = Mathf.Max(1, Mathf.RoundToInt(worldSize.x / s));
+        int ny = Mathf.Max(1, Mathf.RoundToInt(worldSize.y / s));
+        int nz = Mathf.Max(1, Mathf.RoundToInt(worldSize.z / s));
+
+        // ローカル空間での1破片のサイズと開始点
+        Vector3 localPiece = new Vector3(
+            localBounds.size.x / nx,
+            localBounds.size.y / ny,
+            localBounds.size.z / nz);
+        Vector3 localOrigin = localBounds.min;
+
+        // 破片の見た目サイズ = ローカル片サイズ × 壁のワールドスケール
+        Vector3 fragScale = Vector3.Scale(localPiece, transform.lossyScale);
 
         // 破片をまとめる親（元の壁とは独立して生存させる）
         var group = new GameObject($"{name}_Fragments").transform;
-        group.position = center;
+        group.position = transform.position;
 
         for (int ix = 0; ix < nx; ix++)
         for (int iy = 0; iy < ny; iy++)
         for (int iz = 0; iz < nz; iz++)
         {
+            // ローカル中心 → ワールド座標へ変換（壁の回転・スケールを反映）
+            Vector3 localCenter = localOrigin + new Vector3(
+                (ix + 0.5f) * localPiece.x,
+                (iy + 0.5f) * localPiece.y,
+                (iz + 0.5f) * localPiece.z);
+            Vector3 worldPos = transform.TransformPoint(localCenter);
+
             var frag = GameObject.CreatePrimitive(PrimitiveType.Cube);
             frag.transform.SetParent(group, worldPositionStays: true);
-            frag.transform.rotation = transform.rotation;
-            frag.transform.localScale = piece;
-            frag.transform.position = origin + new Vector3(
-                (ix + 0.5f) * piece.x,
-                (iy + 0.5f) * piece.y,
-                (iz + 0.5f) * piece.z);
+            frag.transform.position = worldPos;
+            frag.transform.rotation = transform.rotation; // 壁と同じ向き
+            frag.transform.localScale = fragScale;
 
             if (mat != null)
                 frag.GetComponent<Renderer>().sharedMaterial = mat;

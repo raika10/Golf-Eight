@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 608072398680379482}
   - component: {fileID: 4993591602906418835}
   - component: {fileID: 473719265468084001}
+  - component: {fileID: 7685200282518994741}
   m_Layer: 0
   m_Name: Pillar
   m_TagString: Untagged
@@ -112,3 +113,25 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 1, y: 1, z: 1}
   m_Center: {x: 0, y: 0, z: 0}
+--- !u!114 &7685200282518994741
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6349988464136009429}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a4e0c7ebaf50b44a9b3fe67571e132f9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::MazeWall
+  hp: 1
+  shatterOnDestroy: 1
+  fragmentCounts: {x: 3, y: 2, z: 1}
+  explosionForce: 4
+  explosionRadius: 3
+  fragmentLifetime: 3
+  fragmentMaterial: {fileID: 2100000, guid: f38dbd3b53cd643b89dc8ac39faeb42b, type: 2}
+  onDestroyed:
+    m_PersistentCalls:
+      m_Calls: []
