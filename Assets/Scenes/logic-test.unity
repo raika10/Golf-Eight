@@ -148,11 +148,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5cf5896e0643d4942b7a70e8b78438e7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::MazeGenerator
-  width: 10
-  height: 10
-  cellSize: 3
-  wallHeight: 2
-  wallThickness: 0.3
+  width: 25
+  height: 50
+  cellSize: 5
+  wallHeight: 5
+  wallThickness: 0.1
   wallPrefab: {fileID: 2382470830768573821, guid: 40d01502eccb94e7eb03da0975161393, type: 3}
   floorPrefab: {fileID: 873845854397452120, guid: cb6d61cb8389b4b2b9df8838054203a4, type: 3}
   pillarPrefab: {fileID: 6349988464136009429, guid: 62c0e77e0eb3d4dfa88c23d76bf4d49b, type: 3}
