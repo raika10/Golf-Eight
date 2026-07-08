@@ -122,7 +122,7 @@ public class GolfHoleVisual : MonoBehaviour
         Collider col = go.GetComponent<Collider>();
         if (col != null)
         {
-            DestroyObject(col); // 当たり判定は GolfHole 側だけが持つ
+            DestroySafely(col); // 当たり判定は GolfHole 側だけが持つ
         }
 
         go.transform.SetParent(transform, false);
@@ -163,7 +163,7 @@ public class GolfHoleVisual : MonoBehaviour
         {
             if (generated[i] != null)
             {
-                DestroyObject(generated[i]);
+                DestroySafely(generated[i]);
             }
         }
         generated.Clear();
@@ -172,14 +172,14 @@ public class GolfHoleVisual : MonoBehaviour
         {
             if (materials[i] != null)
             {
-                DestroyObject(materials[i]);
+                DestroySafely(materials[i]);
             }
         }
         materials.Clear();
     }
 
     // Play中は Destroy、エディタ編集中は DestroyImmediate を使い分ける。
-    private void DestroyObject(Object obj)
+    private void DestroySafely(Object obj)
     {
         if (Application.isPlaying)
         {
