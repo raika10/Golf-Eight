@@ -18,8 +18,8 @@ public class GolfBall : MonoBehaviour
     [SerializeField] private float angularDamping = 0.6f; // 回転の抵抗
 
     [Header("停止判定")]
-    [SerializeField] private float stopSpeed = 0.25f;     // この速さ以下がしばらく続いたら停止扱い (m/s)
-    [SerializeField] private float stopDuration = 0.4f;   // stopSpeed 以下が続くべき時間 (s)
+    [SerializeField] private float restLockSpeed = 1.0f;  // この速さ以下が続いたら固定 (m/s)。押されて微振動していても固定できるよう少し高め
+    [SerializeField] private float stopDuration = 0.4f;   // restLockSpeed 以下が続くべき時間 (s)
 
     [Header("透過表示")]
     [SerializeField] private bool ownedByLocalPlayer = false; // このボールがこの画面の操作者のものか
@@ -28,6 +28,7 @@ public class GolfBall : MonoBehaviour
     private Rigidbody body;
     private SphereCollider sphere;
     private float slowTimer; // 遅い状態が続いている時間
+    private bool isResting;  // 止まって固定中か（プレイヤー等に押されてもブレないようロックしている）
 
     /// このボールがローカル操作者のものか。
     public bool OwnedByLocalPlayer => ownedByLocalPlayer;
@@ -118,6 +119,9 @@ public class GolfBall : MonoBehaviour
             return;
         }
 
+        // 止まって固定していたら解除（打つと動けるように）
+        Unfreeze();
+
         // 打つ瞬間に眠っていたら起こす。今の速度は打ち消して打った向きを優先する。
         body.WakeUp();
         body.linearVelocity = Vector3.zero;
@@ -154,27 +158,49 @@ public class GolfBall : MonoBehaviour
         }
     }
 
-    /// 速度が十分に落ちたら「止まった」と判定し、微振動しないよう完全停止させる。
+    /// 速度が十分に落ちたら「止まった」と判定し、微振動しないよう完全に固定する。
     private void UpdateStopState()
     {
-        if (IsHoled)
+        if (IsHoled || isResting)
         {
-            return;
+            return; // 固定済み／カップイン済みなら何もしない
         }
 
-        if (body.linearVelocity.magnitude <= stopSpeed)
+        // 「明らかに動いている」ときだけタイマーをリセット。プレイヤーに押されて微振動している程度なら
+        // タイマーを進めて固定に持っていく（そうしないと押され続けて永遠に固定できずカタカタする）。
+        if (body.linearVelocity.magnitude <= restLockSpeed)
         {
             slowTimer += Time.deltaTime;
-            if (slowTimer >= stopDuration && !body.IsSleeping())
+            if (slowTimer >= stopDuration)
             {
-                body.linearVelocity = Vector3.zero;
-                body.angularVelocity = Vector3.zero;
-                body.Sleep(); // これ以上の微小な滑りを止めて静止させる
+                Freeze(); // 止まったら固定。プレイヤーに触れられても押されず、予想線がブレない
             }
         }
         else
         {
             slowTimer = 0f;
         }
+    }
+
+    /// 止まったボールを完全に固定する。kinematic にして物理シミュレーションから外すので、
+    /// 地面や連続衝突判定による微振動が一切なくなり、外から押されても動かない。
+    /// コライダーは有効なまま（固体として機能）なので、当たり判定は残る。
+    private void Freeze()
+    {
+        isResting = true;
+        body.linearVelocity = Vector3.zero;
+        body.angularVelocity = Vector3.zero;
+        // kinematic では連続衝突判定が使えず警告になるので Discrete に戻してから固定する
+        body.collisionDetectionMode = CollisionDetectionMode.Discrete;
+        body.isKinematic = true;
+    }
+
+    /// 固定を解除して、また自由に動ける状態に戻す。
+    private void Unfreeze()
+    {
+        isResting = false;
+        body.isKinematic = false;
+        // 動いている間は細い障害物をすり抜けないよう連続衝突判定に戻す
+        body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
     }
 }
