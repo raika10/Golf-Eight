@@ -22,9 +22,20 @@ public class MazeGenerator : MonoBehaviour
     public GameObject floorPrefab;
     public GameObject pillarPrefab;
 
+    [Header("スタート/ゴール")]
+    [Tooltip("スタート地点に置くマーカー（任意）")]
+    public GameObject startPrefab;
+    [Tooltip("ゴール地点に置くマーカー。ポール（旗竿）を想定")]
+    public GameObject goalPrefab;
+
     [Header("乱数シード")]
     public bool useRandomSeed = true;
     public int seed;
+
+    /// <summary>スタートのマス座標（掘り始めのマス）。生成後に確定。</summary>
+    public Vector2Int StartCell { get; private set; }
+    /// <summary>ゴールのマス座標（スタートから最も遠いマス）。生成後に確定。</summary>
+    public Vector2Int GoalCell { get; private set; }
 
     // true = 壁あり
     // hWalls[y, x] : Y方向の境界（行yと行y-1の間）、X位置x の水平壁
@@ -60,9 +71,11 @@ public class MazeGenerator : MonoBehaviour
 
         InitWalls();
         CarvePassagesDFS();
+        DetermineStartAndGoal();
         SpawnBlocks();
 
-        Debug.Log($"[MazeGenerator] 迷路生成完了 (seed={seed}, {width}x{height})");
+        Debug.Log($"[MazeGenerator] 迷路生成完了 (seed={seed}, {width}x{height}, " +
+                  $"start={StartCell}, goal={GoalCell})");
     }
 
     // ── アルゴリズム ────────────────────────────────────────────────
@@ -136,6 +149,54 @@ public class MazeGenerator : MonoBehaviour
         else if (d.x == -1) vWalls[a.y, a.x    ] = false; // 西へ移動 → a の左の垂直壁を削除
     }
 
+    // ── スタート/ゴール決定 ────────────────────────────────────────
+
+    void DetermineStartAndGoal()
+    {
+        StartCell = new Vector2Int(0, 0);        // DFSの起点をスタートにする
+        GoalCell = FindFarthestCell(StartCell);  // そこから最も遠いマスをゴールに
+    }
+
+    // 通路をたどってBFSし、fromから最も遠いマスを返す
+    Vector2Int FindFarthestCell(Vector2Int from)
+    {
+        var dist = new int[height, width];
+        for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++)
+                dist[y, x] = -1;
+
+        var queue = new Queue<Vector2Int>();
+        dist[from.y, from.x] = 0;
+        queue.Enqueue(from);
+
+        Vector2Int farthest = from;
+        while (queue.Count > 0)
+        {
+            var c = queue.Dequeue();
+            if (dist[c.y, c.x] > dist[farthest.y, farthest.x])
+                farthest = c;
+
+            foreach (var n in GetPassableNeighbors(c))
+                if (dist[n.y, n.x] < 0)
+                {
+                    dist[n.y, n.x] = dist[c.y, c.x] + 1;
+                    queue.Enqueue(n);
+                }
+        }
+        return farthest;
+    }
+
+    // 壁で隔てられていない（＝通れる）隣マスを返す
+    List<Vector2Int> GetPassableNeighbors(Vector2Int c)
+    {
+        var result = new List<Vector2Int>(4);
+        if (c.y + 1 < height && !hWalls[c.y + 1, c.x]) result.Add(new Vector2Int(c.x, c.y + 1)); // 北
+        if (c.y - 1 >= 0     && !hWalls[c.y,     c.x]) result.Add(new Vector2Int(c.x, c.y - 1)); // 南
+        if (c.x + 1 < width  && !vWalls[c.y, c.x + 1]) result.Add(new Vector2Int(c.x + 1, c.y)); // 東
+        if (c.x - 1 >= 0     && !vWalls[c.y, c.x    ]) result.Add(new Vector2Int(c.x - 1, c.y)); // 西
+        return result;
+    }
+
     // ── ブロック配置 ────────────────────────────────────────────────
 
     void SpawnBlocks()
@@ -198,6 +259,27 @@ public class MazeGenerator : MonoBehaviour
                         $"Pillar_{x}_{y}",
                         isWall: false);
         }
+
+        // スタート/ゴールのマーカー（ゴールにはポールを立てる想定）
+        SpawnMarker(startPrefab, StartCell, "Start");
+        SpawnMarker(goalPrefab, GoalCell, "Goal");
+    }
+
+    /// <summary>マーカーPrefabをマス中央・床の上に直立させて配置する（スケールはPrefabのまま）。</summary>
+    void SpawnMarker(GameObject prefab, Vector2Int cell, string label)
+    {
+        if (prefab == null) return;
+        var go = Instantiate(prefab, CellToWorld(cell), Quaternion.identity, container);
+        go.name = label;
+    }
+
+    /// <summary>マス座標を、そのマス中央・床面のワールド座標へ変換する。ボールやホールの配置に使う。</summary>
+    public Vector3 CellToWorld(Vector2Int cell)
+    {
+        float half = cellSize * 0.5f;
+        // floorPrefab の厚み(0.1)の上面に合わせて少し持ち上げる
+        return transform.TransformPoint(
+            new Vector3(cell.x * cellSize + half, 0.05f, cell.y * cellSize + half));
     }
 
     void SpawnBlock(GameObject prefab, Vector3 localPos, Vector3 scale, string blockName, bool isWall)
