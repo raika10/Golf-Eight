@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -21,6 +22,15 @@ public class BallHitController : MonoBehaviour
     [SerializeField] private float loftAngle = 20f;       // 打ち上げ角（度）。0=水平, 大きいほど上へ
     [SerializeField] private Transform aimSource;         // 向きの基準（未設定なら自分）。カメラ等を割り当ててもよい
     [SerializeField] private float aimSmoothTime = 0.05f; // 狙いのスムージング時間 (s)。マウスの微ブレで予想線が揺れるのを抑える
+
+    [Header("アニメーション（未設定なら子のAnimatorを自動取得。無ければ何もしない）")]
+    [SerializeField] private Animator animator;                // キャラモデルのAnimator
+    [SerializeField] private string isSwingingParam = "IsSwinging"; // スイング状態に入るかの Bool パラメータ名
+    [SerializeField] private string swingTimeParam = "SwingTime";   // スイングクリップの再生位置(0..1)を指定する Float パラメータ名（Motion Time用）
+    [SerializeField] private float backswingNormalized = 0.4f; // 振り上げの頂点（クリップ 0..1）。チャージ中はここで保持
+    [SerializeField] private float downswingTime = 0.25f;     // 離してから振り下ろし切るまでの時間 (s)
+    [SerializeField] private float swingHitDelay = 0.12f;     // 離してからボールが飛ぶまでの時間 (s)。当たりの瞬間に合わせる
+    [SerializeField] private float swingBodyAngle = 90f;      // スイング中に見た目のキャラを横向きにする角度。+90=体が右を向く / -90=左
 
     [Header("対象さがし")]
     [SerializeField] private float hitRange = 5f;         // この距離内のボールを打てる
@@ -56,6 +66,10 @@ public class BallHitController : MonoBehaviour
     private static readonly Collider[] overlapBuffer = new Collider[32];
 
     private Collider[] selfColliders; // 自分（プレイヤー）の当たり判定。予測線でプレイヤーを無視するのに使う
+    private int isSwingingHash;
+    private int swingTimeHash;
+    private PlayerRig rig;                       // 自作リグ（あればスイングを再生）
+    private PlayerController playerController;    // スイング中に体を横向きにする指示先
 
     private void Awake()
     {
@@ -64,6 +78,32 @@ public class BallHitController : MonoBehaviour
         selfColliders = GetComponentsInChildren<Collider>();
         currentYaw = AimTransform().eulerAngles.y;
         EnsureAimLine();
+
+        // アニメーター（キャラモデルの子）を自動取得
+        if (animator == null)
+        {
+            animator = GetComponentInChildren<Animator>();
+        }
+        isSwingingHash = Animator.StringToHash(isSwingingParam);
+        swingTimeHash = Animator.StringToHash(swingTimeParam);
+
+        // 自作リグ（プリミティブの体）があれば取得
+        rig = GetComponentInParent<PlayerRig>();
+
+        // プレイヤー（スイング中の体の横向き用）。自分/親→子→シーン全体の順で探す。
+        playerController = GetComponentInParent<PlayerController>();
+        if (playerController == null)
+        {
+            playerController = GetComponentInChildren<PlayerController>();
+        }
+        if (playerController == null)
+        {
+            playerController = FindAnyObjectByType<PlayerController>();
+        }
+        if (playerController == null)
+        {
+            Debug.LogWarning("[BallHitController] PlayerController が見つかりません。スイング中の体の向き変更が効きません。", this);
+        }
     }
 
     /// 狙いの向きの基準になる Transform（未設定なら自分＝載っているオブジェクトの向き）。
@@ -87,7 +127,8 @@ public class BallHitController : MonoBehaviour
         // マウス視点の微ブレで予想線が揺れないよう、狙いの角度をスムージング（ローパス）する。
         if (!useMouseAim)
         {
-            float targetYaw = AimTransform().eulerAngles.y;
+            // 論理向き(AimYaw)を狙いに使う。スイング中に見た目を横向きにしても狙いはズレない。
+            float targetYaw = playerController != null ? playerController.AimYaw : AimTransform().eulerAngles.y;
             currentYaw = Mathf.SmoothDampAngle(currentYaw, targetYaw, ref yawVelocity, aimSmoothTime);
             return;
         }
@@ -121,6 +162,18 @@ public class BallHitController : MonoBehaviour
             isCharging = true;
             currentCharge = 0f;
             chargeStartDistance = FlatDistanceTo(targetBall);
+
+            // スイング状態に入る（IsSwinging=true）。再生位置は SwingTime で直接指定する。
+            if (animator != null)
+            {
+                animator.SetBool(isSwingingHash, true);
+                animator.SetFloat(swingTimeHash, 0f);
+            }
+            // 見た目のキャラを横向き（ゴルフの構え）にする
+            if (playerController != null)
+            {
+                playerController.SetSwingBodyOffset(swingBodyAngle);
+            }
         }
 
         if (!isCharging)
@@ -131,28 +184,98 @@ public class BallHitController : MonoBehaviour
         // 狙っていたボールが打てなくなったら溜めをキャンセル
         if (!CanHit(targetBall))
         {
-            isCharging = false;
-            currentCharge = 0f;
+            CancelCharge();
             return;
         }
 
         // 溜め中に少し後ろへ下がったらキャンセル（本物のゴルフのように、構えから離れたら仕切り直し）
         if (FlatDistanceTo(targetBall) > chargeStartDistance + chargeCancelBackDistance)
         {
-            isCharging = false;
-            currentCharge = 0f;
+            CancelCharge();
             return;
         }
 
         // 押している間、強さが溜まっていく（最大で頭打ち）
         currentCharge = Mathf.Clamp01(currentCharge + Time.deltaTime / Mathf.Max(0.01f, chargeTime));
 
-        // 離した瞬間に打つ
+        // チャージ中：クラブを振り上げた位置（backswingNormalized）まで上げて、そこで保持する。
+        // Motion Time で再生位置を直接指定しているので、指定した所でピタッと止まる（＝振り上げキープ）。
+        if (animator != null)
+        {
+            float raise = Mathf.SmoothStep(0f, backswingNormalized, Mathf.Clamp01(currentCharge * 2.5f));
+            animator.SetFloat(swingTimeHash, raise);
+        }
+
+        // 離した瞬間：振り上げ位置から振り下ろし（SwingTimeを1へ動かす）。当たる瞬間にボール発射。
         if (mouse.leftButton.wasReleasedThisFrame)
         {
-            targetBall.Hit(GetAimDirection(), CurrentPower());
+            if (rig != null)
+            {
+                rig.Swing();
+            }
+            StartCoroutine(DownSwing());
+            StartCoroutine(HitAfterSwing(targetBall, GetAimDirection(), CurrentPower()));
             isCharging = false;
             currentCharge = 0f;
+        }
+    }
+
+    /// 振り下ろし：SwingTime を1まで動かしつつ、体の横向きも同時にほどいて正面へ戻す。
+    /// （本物のゴルフのように、振り下ろしと一緒に体が正面を向く。最後に一気に戻ると不自然になるため）
+    private IEnumerator DownSwing()
+    {
+        float start = animator != null ? animator.GetFloat(swingTimeHash) : 0f;
+        for (float t = 0f; t < downswingTime; t += Time.deltaTime)
+        {
+            float k = Mathf.Clamp01(t / Mathf.Max(0.01f, downswingTime));
+            if (animator != null)
+            {
+                animator.SetFloat(swingTimeHash, Mathf.Lerp(start, 1f, k));
+            }
+            // 振り下ろしの進み具合に合わせて、体の横向きを 0（正面）へほどく
+            if (playerController != null)
+            {
+                playerController.SetSwingBodyOffset(Mathf.Lerp(swingBodyAngle, 0f, k));
+            }
+            yield return null;
+        }
+        if (animator != null)
+        {
+            animator.SetFloat(swingTimeHash, 1f);
+            animator.SetBool(isSwingingHash, false); // 通常（歩き/待機）へ戻る
+        }
+        if (playerController != null)
+        {
+            playerController.SetSwingBodyOffset(0f);
+        }
+    }
+
+    /// 溜めを中断して通常（歩き/待機）に戻す。
+    private void CancelCharge()
+    {
+        isCharging = false;
+        currentCharge = 0f;
+        if (animator != null)
+        {
+            animator.SetBool(isSwingingHash, false);
+            animator.SetFloat(swingTimeHash, 0f);
+        }
+        if (playerController != null)
+        {
+            playerController.SetSwingBodyOffset(0f); // 見た目の横向きを戻す
+        }
+    }
+
+    /// スイングの当たる瞬間（swingHitDelay秒後）にボールを発射する。向き・強さは離した瞬間の値。
+    private IEnumerator HitAfterSwing(GolfBall ball, Vector3 direction, float power)
+    {
+        if (swingHitDelay > 0f)
+        {
+            yield return new WaitForSeconds(swingHitDelay);
+        }
+        if (ball != null && !ball.IsHoled)
+        {
+            ball.Hit(direction, power);
         }
     }
 
