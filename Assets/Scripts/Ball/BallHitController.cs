@@ -181,6 +181,13 @@ public class BallHitController : MonoBehaviour
             return;
         }
 
+        // ジャンプしたら（＝空中に居たら）チャージを解除。空中からは打てない。
+        if (JumpPressedThisFrame() || (playerController != null && !playerController.IsGrounded))
+        {
+            CancelCharge();
+            return;
+        }
+
         // 狙っていたボールが打てなくなったら溜めをキャンセル
         if (!CanHit(targetBall))
         {
@@ -367,6 +374,13 @@ public class BallHitController : MonoBehaviour
             return Vector3.Dot(toBallDir, aimRight) >= 0f;
         }
         return true;
+    }
+
+    /// このフレームでジャンプ入力があったか（チャージ解除の判定に使う）。
+    private bool JumpPressedThisFrame()
+    {
+        Keyboard keyboard = Keyboard.current;
+        return keyboard != null && keyboard.spaceKey.wasPressedThisFrame;
     }
 
     /// ボールまでの水平距離（高さは無視）。

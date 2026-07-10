@@ -50,6 +50,9 @@ public class PlayerController : MonoBehaviour
     /// 狙い/移動の基準になる向き（度）。見た目のスイング横向きは含まない論理的な向き。
     public float AimYaw => yaw;
 
+    /// 地面に接しているか（空中ではチャージできない等の判定に使う）。
+    public bool IsGrounded => controller != null && controller.isGrounded;
+
     /// スイング中だけ、見た目のキャラを横向き（ゴルフの構え）にするための角度を設定する。
     /// 0 で通常向きに戻る。狙い・移動・カメラには影響しない（見た目だけ）。
     public void SetSwingBodyOffset(float degrees)
