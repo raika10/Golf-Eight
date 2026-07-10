@@ -4,6 +4,9 @@ using UnityEngine.InputSystem;
 [RequireComponent(typeof(CharacterController))]             // CharacterControllerコンポーネントの自動追加
 public class PlayerController : MonoBehaviour
 {
+    [Header("操作")]
+    [SerializeField] private bool isLocalPlayer = true;     // この画面で操作するプレイヤーか。falseなら入力もカメラも扱わない（他プレイヤー/ダミー）
+
     [Header("移動")]
     [SerializeField] private float moveSpeed = 6f;          // 水平方向の速度 (m/s)
 
@@ -21,6 +24,7 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private float cameraHeight = 2f;       // 注視点の高さ
     [SerializeField] private float minPitch = -30f;         // 見上げの限界（負=見上げ）
     [SerializeField] private float maxPitch = 70f;          // 見下ろしの限界
+    [SerializeField] private float cameraSmoothTime = 0.05f; // カメラ位置のスムージング (s)。CharacterControllerの微振動でブレるのを抑える
 
     [Header("アニメーション（未設定なら子のAnimatorを自動取得。無ければ何もしない）")]
     [SerializeField] private Animator animator;             // キャラモデルのAnimator
@@ -46,12 +50,38 @@ public class PlayerController : MonoBehaviour
     private float swingVisualTarget;    // 見た目の横向き角度の目標値（スイング中だけ非0）
     private Transform modelTransform;   // 見た目のモデル（Animatorが付いた子）。ここだけ回す
     private Vector3 modelBaseLocalPos;  // モデルの本来のローカル位置（毎フレームここへ戻してズレを防ぐ）
+    private Vector3 cameraVelocity;     // カメラ位置スムージング用の速度バッファ
+    private bool cameraSnapped;         // 初回だけカメラを目標位置へ瞬間移動させる
+    private bool ragdollMode;           // 倒れている間か（操作・アニメを止め、カメラを固定する）
+    private Transform ragdollFollow;    // 倒れている間の参照（今は未使用。将来の追従用）
+    private Vector3 ragdollPivot;       // 倒れた瞬間の注視点。倒れている間はここを軸にカメラを回す
+
+    /// 倒れている間の状態を切り替える。倒れている間は操作を受け付けないが、
+    /// カメラは「倒れる直前の位置」を軸に、通常と同じ視点操作（オービット）ができる。
+    public void SetRagdollMode(bool on, Transform followTarget)
+    {
+        ragdollMode = on;
+        ragdollFollow = followTarget;
+
+        if (on)
+        {
+            // 吹っ飛ばされる直前の注視点を覚えて、その場を軸にする（体は追わない）
+            ragdollPivot = transform.position + Vector3.up * cameraHeight;
+        }
+        else
+        {
+            cameraVelocity = Vector3.zero; // 復帰時のスムージングをリセット
+        }
+    }
 
     /// 狙い/移動の基準になる向き（度）。見た目のスイング横向きは含まない論理的な向き。
     public float AimYaw => yaw;
 
     /// 地面に接しているか（空中ではチャージできない等の判定に使う）。
     public bool IsGrounded => controller != null && controller.isGrounded;
+
+    /// この画面で操作するプレイヤーか。false のプレイヤーは入力を受け付けない。
+    public bool IsLocalPlayer => isLocalPlayer;
 
     /// スイング中だけ、見た目のキャラを横向き（ゴルフの構え）にするための角度を設定する。
     /// 0 で通常向きに戻る。狙い・移動・カメラには影響しない（見た目だけ）。
@@ -86,7 +116,10 @@ public class PlayerController : MonoBehaviour
         groundedHash = Animator.StringToHash(groundedParam);
         jumpHash = Animator.StringToHash(jumpParam);
 
-        AcquireCamera();
+        if (isLocalPlayer)
+        {
+            AcquireCamera();
+        }
     }
 
     /// 使うカメラを取得する。子にあればそれ、無ければシーンのメインカメラ（Camera.main）。
@@ -103,7 +136,7 @@ public class PlayerController : MonoBehaviour
 
     private void Start()
     {
-        if (lockCursor)
+        if (isLocalPlayer && lockCursor)
         {
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
@@ -112,6 +145,25 @@ public class PlayerController : MonoBehaviour
 
     private void Update()
     {
+        if (ragdollMode)
+        {
+            // 倒れている間：移動・アニメは止めるが、マウスで周りを見渡せるようにする
+            if (isLocalPlayer)
+            {
+                ReadLookInput();
+            }
+            return;
+        }
+
+        // 他プレイヤー／ダミー：入力は受け付けず、重力で地面に立っているだけ
+        if (!isLocalPlayer)
+        {
+            UpdateVerticalVelocity();
+            controller.Move(new Vector3(0f, verticalVelocity, 0f) * Time.deltaTime);
+            UpdateAnimator(0f); // 待機アニメ
+            return;
+        }
+
         UpdateLook();
 
         Vector3 moveInput = ReadMoveInput();
@@ -141,7 +193,15 @@ public class PlayerController : MonoBehaviour
     // Animator は Update の後に動くので、モデルの位置合わせ・カメラは LateUpdate で行う
     private void LateUpdate()
     {
-        ApplyModelPose();
+        if (!ragdollMode)
+        {
+            ApplyModelPose(); // 倒れている間は骨を物理に任せるので触らない
+        }
+
+        if (!isLocalPlayer)
+        {
+            return; // 他プレイヤーはカメラを触らない（ローカルのカメラを奪わないように）
+        }
 
         if (cameraTransform == null)
         {
@@ -163,8 +223,9 @@ public class PlayerController : MonoBehaviour
         modelTransform.localRotation = Quaternion.Euler(0f, swingVisualOffset, 0f);
     }
 
-    /// マウスで向きとカメラ上下を更新する。
-    private void UpdateLook()
+    /// マウス入力で yaw / pitch（見る向き）だけ更新する。体の回転はしない。
+    /// 倒れている間も、これだけ呼べば周りを見渡せる。
+    private void ReadLookInput()
     {
         Mouse mouse = Mouse.current;
         if (mouse == null)
@@ -176,12 +237,16 @@ public class PlayerController : MonoBehaviour
         if (skipFirstMouse) // 最初のフレームのマウス入力を無視するため(無視しないとカメラがブレる)
         {
             skipFirstMouse = false;
+            return;
         }
-        else
-        {
-            yaw += delta.x * mouseSensitivity;                                           // 左右の向き
-            pitch = Mathf.Clamp(pitch - delta.y * pitchSensitivity, minPitch, maxPitch); // 上下でカメラ
-        }
+        yaw += delta.x * mouseSensitivity;                                           // 左右の向き
+        pitch = Mathf.Clamp(pitch - delta.y * pitchSensitivity, minPitch, maxPitch); // 上下でカメラ
+    }
+
+    /// マウスで向きとカメラ上下を更新し、体の向きを反映する。
+    private void UpdateLook()
+    {
+        ReadLookInput();
 
         // 見た目の横向き（スイングの構え）を目標へなめらかに寄せる
         swingVisualOffset = Mathf.MoveTowardsAngle(swingVisualOffset, swingVisualTarget, swingTurnSpeed * Time.deltaTime);
@@ -208,12 +273,27 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        // 注視点（プレイヤーの少し上）
-        Vector3 pivot = transform.position + Vector3.up * cameraHeight;
+        // 注視点。通常はプレイヤーの少し上、倒れている間は「倒れる直前の場所」で固定する。
+        // 軸が固定されるだけで、視点操作（オービット）は通常とまったく同じ。
+        // 体の回転・移動はカメラに一切伝わらないので、一緒にぐるぐる回らない。
+        Vector3 pivot = ragdollMode ? ragdollPivot : transform.position + Vector3.up * cameraHeight;
         // yaw（左右）＋pitch（上下）でカメラの向きを決め、その後方 cameraDistance に置く
         Quaternion rot = Quaternion.Euler(pitch, yaw, 0f);
-        cameraTransform.position = pivot - (rot * Vector3.forward) * cameraDistance;
-        cameraTransform.rotation = rot;
+        Vector3 targetPos = pivot - (rot * Vector3.forward) * cameraDistance;
+
+        if (!cameraSnapped)
+        {
+            // 開始時は目標位置へ即座に合わせる（遠くから滑って来ないように）
+            cameraTransform.position = targetPos;
+            cameraVelocity = Vector3.zero;
+            cameraSnapped = true;
+        }
+        else
+        {
+            // CharacterController の微振動でカメラがブレるので、位置だけなめらかに追従させる
+            cameraTransform.position = Vector3.SmoothDamp(cameraTransform.position, targetPos, ref cameraVelocity, cameraSmoothTime);
+        }
+        cameraTransform.rotation = rot; // 向きはマウスに直結（遅れさせない）
     }
 
     /// WASD を向いている方向基準の水平移動ベクトル（大きさ 0〜1）に変換する。

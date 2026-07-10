@@ -32,14 +32,24 @@ public class BallHitController : MonoBehaviour
     [SerializeField] private float swingHitDelay = 0.12f;     // 離してからボールが飛ぶまでの時間 (s)。当たりの瞬間に合わせる
     [SerializeField] private float swingBodyAngle = 90f;      // スイング中に見た目のキャラを横向きにする角度。+90=体が右を向く / -90=左
 
+    [Header("相手プレイヤーを打つ")]
+    [SerializeField] private bool canHitPlayers = true;        // ボールと同じように相手プレイヤーも打てる（吹っ飛ばす）
+    [SerializeField] private float playerFlingPower = 1.2f;    // 打つ強さに対する吹っ飛びの倍率
+    [SerializeField] private float playerHitRange = 2.5f;      // 相手を打てる距離 (m)。この範囲内ならどの向きからでも打てる
+    [SerializeField] private float playerPredictRadius = 0.3f; // 予測線で相手の体を見立てる半径 (m)
+    [SerializeField] private float playerAimHeight = 1.0f;     // 予測線の開始高さ（相手の胸あたり m）
+
     [Header("対象さがし")]
     [SerializeField] private float hitRange = 5f;         // この距離内のボールを打てる
     [SerializeField] private LayerMask hittableBallMask = ~0; // ボール探索の対象レイヤー
     [SerializeField] private bool onlyHitRestingBall = true;  // 止まっている球だけ打てるか
 
-    [Header("アドレス（立ち位置の制限）")]
-    [SerializeField] private float maxAddressAngle = 75f; // ボールがこの角度以内で正面に見えていないと打てない（背後や真横は不可）
-    [SerializeField] private bool addressFromLeft = false; // 本物のゴルフのように、ボールの左側からしか打てないようにする（打てる方向が制限される点に注意）
+    [Header("アドレス（ボールは左側の近くだけ打てる）")]
+    [SerializeField] private bool addressFromLeft = true;  // ボールの左側に立った時だけ打てる（オフなら右側）
+    [SerializeField] private float minSideOffset = 0.3f;   // ボールが横方向にこれ以上離れていること (m)。真後ろからは打てない
+    [SerializeField] private float maxSideOffset = 1.0f;   // ボールが横方向にこれ以内であること (m)。離れすぎは打てない
+    [SerializeField] private float maxForwardOfBall = 0.3f;// 自分がボールより「前」に出られる距離 (m)。小さいほど“ボールの前”から打てない
+    [SerializeField] private float maxBehindBall = 0.6f;   // 自分がボールより「後ろ」に下がれる距離 (m)
     [SerializeField] private float chargeCancelBackDistance = 0.25f; // チャージ中にこれ以上ボールから離れたらキャンセル (m)
 
     [Header("強さ")]
@@ -61,7 +71,9 @@ public class BallHitController : MonoBehaviour
     private float currentCharge;      // 現在の溜め (0..1)
     private bool isCharging;          // 溜め中か
     private float chargeStartDistance; // 溜め始めたときのボールまでの距離（後退キャンセル判定用）
-    private GolfBall targetBall;      // いま狙っているボール
+    private GolfBall targetBall;             // いま狙っているボール
+    private RagdollController targetPlayer;  // いま狙っている相手プレイヤー
+    private RagdollController selfRagdoll;   // 自分（対象から除外する）
     private readonly List<Vector3> predictedPoints = new List<Vector3>();
     private static readonly Collider[] overlapBuffer = new Collider[32];
 
@@ -89,6 +101,8 @@ public class BallHitController : MonoBehaviour
 
         // 自作リグ（プリミティブの体）があれば取得
         rig = GetComponentInParent<PlayerRig>();
+        // 自分の Ragdoll（対象から除外するため）
+        selfRagdoll = GetComponentInParent<RagdollController>();
 
         // プレイヤー（スイング中の体の横向き用）。自分/親→子→シーン全体の順で探す。
         playerController = GetComponentInParent<PlayerController>();
@@ -114,8 +128,20 @@ public class BallHitController : MonoBehaviour
 
     private void Update()
     {
+        // 他プレイヤー／ダミーは入力を受け付けない（狙い・チャージ・予測線を出さない）
+        if (playerController != null && !playerController.IsLocalPlayer)
+        {
+            if (aimLine != null)
+            {
+                aimLine.enabled = false;
+            }
+            return;
+        }
+
         UpdateAim();
         targetBall = FindTargetBall();
+        targetPlayer = FindTargetPlayer();
+        ResolveTarget(); // ボールと相手が両方近いときは、近い方だけ狙う
         UpdateCharge();
         UpdateAimLine();
     }
@@ -156,12 +182,12 @@ public class BallHitController : MonoBehaviour
             return;
         }
 
-        // 押し始め：狙えるボールがあれば溜め開始。開始時の距離を覚えておく（後退キャンセル用）
-        if (mouse.leftButton.wasPressedThisFrame && CanHit(targetBall))
+        // 押し始め：狙える対象（ボール or 相手プレイヤー）があれば溜め開始。開始時の距離を覚えておく
+        if (mouse.leftButton.wasPressedThisFrame && HasTarget())
         {
             isCharging = true;
             currentCharge = 0f;
-            chargeStartDistance = FlatDistanceTo(targetBall);
+            chargeStartDistance = FlatDistanceTo(TargetPosition());
 
             // スイング状態に入る（IsSwinging=true）。再生位置は SwingTime で直接指定する。
             if (animator != null)
@@ -188,15 +214,15 @@ public class BallHitController : MonoBehaviour
             return;
         }
 
-        // 狙っていたボールが打てなくなったら溜めをキャンセル
-        if (!CanHit(targetBall))
+        // 狙っていた対象が打てなくなったら溜めをキャンセル
+        if (!HasTarget())
         {
             CancelCharge();
             return;
         }
 
         // 溜め中に少し後ろへ下がったらキャンセル（本物のゴルフのように、構えから離れたら仕切り直し）
-        if (FlatDistanceTo(targetBall) > chargeStartDistance + chargeCancelBackDistance)
+        if (FlatDistanceTo(TargetPosition()) > chargeStartDistance + chargeCancelBackDistance)
         {
             CancelCharge();
             return;
@@ -221,9 +247,31 @@ public class BallHitController : MonoBehaviour
                 rig.Swing();
             }
             StartCoroutine(DownSwing());
-            StartCoroutine(HitAfterSwing(targetBall, GetAimDirection(), CurrentPower()));
+
+            // 当たる瞬間に、ボールなら発射・相手プレイヤーなら吹っ飛ばす
+            if (targetPlayer != null)
+            {
+                StartCoroutine(FlingAfterSwing(targetPlayer, GetAimDirection(), CurrentPower() * playerFlingPower));
+            }
+            else
+            {
+                StartCoroutine(HitAfterSwing(targetBall, GetAimDirection(), CurrentPower()));
+            }
             isCharging = false;
             currentCharge = 0f;
+        }
+    }
+
+    /// スイングの当たる瞬間（swingHitDelay秒後）に相手プレイヤーを吹っ飛ばす。
+    private IEnumerator FlingAfterSwing(RagdollController other, Vector3 direction, float power)
+    {
+        if (swingHitDelay > 0f)
+        {
+            yield return new WaitForSeconds(swingHitDelay);
+        }
+        if (other != null && !other.IsDown)
+        {
+            other.Fling(direction.normalized * power);
         }
     }
 
@@ -339,41 +387,150 @@ public class BallHitController : MonoBehaviour
         {
             return false;
         }
-        if (!IsAddressedFromCorrectSide(ball))
+        if (!IsAddressed(ball.transform.position))
         {
             return false;
         }
         return true;
     }
 
-    /// 打てる立ち位置か。基本は「打つ方向にボールを正面付近で捉えている」こと（向いた方向へ打てる）。
-    /// addressFromLeft=true のときだけ、さらに「ボールが自分の右側にある（＝プレイヤーはボールの左）」を要求する。
-    private bool IsAddressedFromCorrectSide(GolfBall ball)
+    /// 打てる立ち位置か。「対象（ボール／相手プレイヤー）の左側（既定）のすぐ近く」に居るときだけ true。
+    /// 打つ方向を基準に、横方向（minSideOffset〜maxSideOffset）と
+    /// 前後方向（前は maxForwardOfBall まで、後ろは maxBehindBall まで）の“箱”の中に対象がある必要がある。
+    /// ボールと相手プレイヤーで**同じ判定**を使う。
+    private bool IsAddressed(Vector3 targetPos)
     {
         Vector3 aimFlat = Quaternion.Euler(0f, currentYaw, 0f) * Vector3.forward;
+        Vector3 aimRight = Vector3.Cross(Vector3.up, aimFlat);
 
-        Vector3 toBall = ball.transform.position - transform.position;
-        toBall.y = 0f;
-        if (toBall.sqrMagnitude < 1e-6f)
+        Vector3 to = targetPos - transform.position;
+        to.y = 0f;
+
+        float side = Vector3.Dot(to, aimRight);   // +なら自分の右にボール（＝自分はボールの左）
+        float forward = Vector3.Dot(to, aimFlat); // +ならボールが自分より前（＝自分はボールの後ろ）
+
+        // 左側アドレスなら「ボールは自分の右」。右側アドレスなら符号を反転して同じ判定にする。
+        float sideOnAddressSide = addressFromLeft ? side : -side;
+        if (sideOnAddressSide < minSideOffset || sideOnAddressSide > maxSideOffset)
         {
-            return true; // ほぼ真上：位置の判定は省略
+            return false; // 横に近すぎ／遠すぎ（＝真後ろや離れた位置からは打てない）
         }
-        Vector3 toBallDir = toBall.normalized;
 
-        // ① ボールを正面付近に捉えているか（背後や真横は不可）。打つ方向にボールがあることを要求。
-        float minFrontDot = Mathf.Cos(maxAddressAngle * Mathf.Deg2Rad);
-        if (Vector3.Dot(toBallDir, aimFlat) < minFrontDot)
+        // 前後は非対称。自分がボールより前に出すぎると打てない（＝“ボールの左前”を弾く）
+        if (forward < -maxForwardOfBall)
+        {
+            return false; // 自分がボールより前に出すぎ
+        }
+        if (forward > maxBehindBall)
+        {
+            return false; // 自分がボールより後ろに下がりすぎ
+        }
+        return true;
+    }
+
+    /// その相手プレイヤーをいま打てるか。
+    /// ボールのような厳密な“箱”は不要だが、**相手の左側（既定）に立っている**必要がある。
+    /// 距離は playerHitRange 内、前後の位置は自由。
+    private bool CanHit(RagdollController other)
+    {
+        if (other == null || other == selfRagdoll || other.IsDown)
         {
             return false;
         }
-
-        // ② 左側アドレス限定のときだけ、ボールが右側にあること（プレイヤーがボールの左）を要求
-        if (addressFromLeft)
+        if (FlatDistanceTo(other.transform.position) > playerHitRange)
         {
-            Vector3 aimRight = Vector3.Cross(Vector3.up, aimFlat);
-            return Vector3.Dot(toBallDir, aimRight) >= 0f;
+            return false;
+        }
+        return IsPlayerAddressed(other.transform.position);
+    }
+
+    /// 相手を打てる立ち位置か。「相手の**左後ろ**（既定）」に居るときだけ true。
+    /// ・左側：対象が自分の右側にある（addressFromLeft=true のとき）
+    /// ・後ろ側：対象が自分より前にある（＝自分が相手より前に出ていない）
+    private bool IsPlayerAddressed(Vector3 targetPos)
+    {
+        Vector3 aimFlat = Quaternion.Euler(0f, currentYaw, 0f) * Vector3.forward;
+        Vector3 aimRight = Vector3.Cross(Vector3.up, aimFlat);
+
+        Vector3 to = targetPos - transform.position;
+        to.y = 0f;
+        if (to.sqrMagnitude < 1e-6f)
+        {
+            return true;
+        }
+
+        float side = Vector3.Dot(to, aimRight);   // +なら対象が自分の右（＝自分は対象の左）
+        float forward = Vector3.Dot(to, aimFlat); // +なら対象が自分より前（＝自分は対象の後ろ）
+
+        float sideOnAddressSide = addressFromLeft ? side : -side;
+        if (sideOnAddressSide < 0f)
+        {
+            return false; // 対象の左側（既定）に居ない
+        }
+        if (forward < 0f)
+        {
+            return false; // 自分が対象より前に出ている＝「左前」なので打てない
         }
         return true;
+    }
+
+    /// 範囲内でいちばん近い、打てる相手プレイヤーを探す。
+    private RagdollController FindTargetPlayer()
+    {
+        if (!canHitPlayers)
+        {
+            return null;
+        }
+        int count = Physics.OverlapSphereNonAlloc(transform.position, playerHitRange, overlapBuffer, ~0, QueryTriggerInteraction.Ignore);
+        RagdollController nearest = null;
+        float nearestSqr = float.MaxValue;
+
+        for (int i = 0; i < count; i++)
+        {
+            RagdollController other = overlapBuffer[i].GetComponentInParent<RagdollController>();
+            if (!CanHit(other))
+            {
+                continue;
+            }
+            float sqr = (other.transform.position - transform.position).sqrMagnitude;
+            if (sqr < nearestSqr)
+            {
+                nearestSqr = sqr;
+                nearest = other;
+            }
+        }
+        return nearest;
+    }
+
+    /// 狙う対象を1つに決める。ボールをきちんと構えられているならボール優先（ゴルフ優先）、
+    /// そうでなければ範囲内の相手プレイヤーを狙う。決定後は有効な対象だけが残る。
+    private void ResolveTarget()
+    {
+        if (targetBall != null && CanHit(targetBall))
+        {
+            targetPlayer = null; // ボールを構えている → ボールを打つ
+            return;
+        }
+
+        targetBall = null; // ボールは打てる構えではない
+        if (!CanHit(targetPlayer))
+        {
+            targetPlayer = null;
+        }
+    }
+
+    /// いま狙えている対象があるか（ResolveTarget 後は有効な対象だけが入っている）。
+    private bool HasTarget()
+    {
+        return targetBall != null || targetPlayer != null;
+    }
+
+    /// 狙っている対象の位置（無ければ自分の位置）。
+    private Vector3 TargetPosition()
+    {
+        if (targetBall != null) return targetBall.transform.position;
+        if (targetPlayer != null) return targetPlayer.transform.position;
+        return transform.position;
     }
 
     /// このフレームでジャンプ入力があったか（チャージ解除の判定に使う）。
@@ -386,11 +543,13 @@ public class BallHitController : MonoBehaviour
     /// ボールまでの水平距離（高さは無視）。
     private float FlatDistanceTo(GolfBall ball)
     {
-        if (ball == null)
-        {
-            return float.MaxValue;
-        }
-        Vector3 d = ball.transform.position - transform.position;
+        return ball == null ? float.MaxValue : FlatDistanceTo(ball.transform.position);
+    }
+
+    /// 指定位置までの水平距離（高さは無視）。
+    private float FlatDistanceTo(Vector3 pos)
+    {
+        Vector3 d = pos - transform.position;
         d.y = 0f;
         return d.magnitude;
     }
@@ -418,19 +577,37 @@ public class BallHitController : MonoBehaviour
             return;
         }
 
-        bool show = CanHit(targetBall);
-        aimLine.enabled = show;
-        if (!show)
+        // ResolveTarget 済みなので、残っている対象がそのまま予測線の対象になる
+        bool showBall = targetBall != null;
+        bool showPlayer = targetPlayer != null;
+
+        aimLine.enabled = showBall || showPlayer;
+        if (!aimLine.enabled)
         {
             return;
         }
 
-        // Hit と同じく Impulse なので、打った直後の初速 = 強さ / 質量。
         float power = isCharging ? CurrentPower() : minPower;
-        Vector3 start = targetBall.transform.position;
-        Vector3 initialVelocity = GetAimDirection() * (power / Mathf.Max(0.0001f, targetBall.Mass));
+        Vector3 start;
+        Vector3 initialVelocity;
+        float radius;
 
-        SimulateTrajectory(start, initialVelocity, targetBall.Radius, predictedPoints);
+        if (showBall)
+        {
+            // Hit と同じく Impulse なので、打った直後の初速 = 強さ / 質量。
+            start = targetBall.transform.position;
+            initialVelocity = GetAimDirection() * (power / Mathf.Max(0.0001f, targetBall.Mass));
+            radius = targetBall.Radius;
+        }
+        else
+        {
+            // Fling は速度を直接与えるので、初速 = 強さ × 倍率。体は胸あたりから飛ぶ想定。
+            start = targetPlayer.transform.position + Vector3.up * playerAimHeight;
+            initialVelocity = GetAimDirection() * (power * playerFlingPower);
+            radius = playerPredictRadius;
+        }
+
+        SimulateTrajectory(start, initialVelocity, radius, predictedPoints);
         aimLine.positionCount = predictedPoints.Count;
         aimLine.SetPositions(predictedPoints.ToArray());
     }
