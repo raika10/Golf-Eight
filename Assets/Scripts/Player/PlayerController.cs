@@ -45,6 +45,7 @@ public class PlayerController : MonoBehaviour
     private float swingVisualOffset;    // 見た目だけ足す横向きの角度（度）。今の値
     private float swingVisualTarget;    // 見た目の横向き角度の目標値（スイング中だけ非0）
     private Transform modelTransform;   // 見た目のモデル（Animatorが付いた子）。ここだけ回す
+    private Vector3 modelBaseLocalPos;  // モデルの本来のローカル位置（毎フレームここへ戻してズレを防ぐ）
 
     /// 狙い/移動の基準になる向き（度）。見た目のスイング横向きは含まない論理的な向き。
     public float AimYaw => yaw;
@@ -74,7 +75,9 @@ public class PlayerController : MonoBehaviour
             // 物理更新（Animate Physics）だと揺れることがあるので通常更新に固定
             animator.updateMode = AnimatorUpdateMode.Normal;
             // 見た目のモデル＝Animatorが付いているオブジェクト。スイングの横向きはここだけ回す。
+            // 元のローカル位置を覚えておき、毎フレーム戻して本体からズレないようにする。
             modelTransform = animator.transform;
+            modelBaseLocalPos = modelTransform.localPosition;
         }
         speedHash = Animator.StringToHash(speedParam);
         groundedHash = Animator.StringToHash(groundedParam);
@@ -132,14 +135,29 @@ public class PlayerController : MonoBehaviour
         animator.SetBool(groundedHash, controller.isGrounded);
     }
 
-    // 移動が終わった後にカメラを合わせたいのでLateUpdateを使う
+    // Animator は Update の後に動くので、モデルの位置合わせ・カメラは LateUpdate で行う
     private void LateUpdate()
     {
+        ApplyModelPose();
+
         if (cameraTransform == null)
         {
             AcquireCamera(); // まだ取れていなければ探し直す
         }
         UpdateCamera();
+    }
+
+    /// 見た目のモデル（子）の位置と向きを、Animator の後に確定させる。
+    /// ・localPosition を毎フレーム元に戻す → ルートモーション等でモデルが本体から前へズレるのを防ぐ
+    /// ・localRotation でスイング中の横向きを適用する（本体・カメラ・当たり判定には影響しない）
+    private void ApplyModelPose()
+    {
+        if (modelTransform == null || modelTransform == transform)
+        {
+            return;
+        }
+        modelTransform.localPosition = modelBaseLocalPos;
+        modelTransform.localRotation = Quaternion.Euler(0f, swingVisualOffset, 0f);
     }
 
     /// マウスで向きとカメラ上下を更新する。
@@ -167,10 +185,9 @@ public class PlayerController : MonoBehaviour
 
         if (modelTransform != null && modelTransform != transform)
         {
-            // 本体は狙いの向きのまま（カメラ・当たり判定・移動に影響させない）
+            // 本体は狙いの向きのまま（カメラ・当たり判定・移動に影響させない）。
+            // モデルの位置・向きは Animator の後（LateUpdate）で適用する。
             transform.rotation = Quaternion.Euler(0f, yaw, 0f);
-            // 見た目のモデルだけを横向きにする
-            modelTransform.localRotation = Quaternion.Euler(0f, swingVisualOffset, 0f);
         }
         else
         {
