@@ -30,12 +30,12 @@ public class BallHitController : MonoBehaviour
     [SerializeField] private float backswingNormalized = 0.4f; // 振り上げの頂点（クリップ 0..1）。チャージ中はここで保持
     [SerializeField] private float downswingTime = 0.25f;     // 離してから振り下ろし切るまでの時間 (s)
     [SerializeField] private float swingHitDelay = 0.12f;     // 離してからボールが飛ぶまでの時間 (s)。当たりの瞬間に合わせる
-    [SerializeField] private float swingBodyAngle = 90f;      // スイング中に見た目のキャラを横向きにする角度。+90=体が右を向く / -90=左
+    [SerializeField] private float swingBodyAngle = 120f;     // スイング中に見た目のキャラを横向きにする角度。+90〜120=体が右向き / -で左
 
     [Header("相手プレイヤーを打つ")]
     [SerializeField] private bool canHitPlayers = true;        // ボールと同じように相手プレイヤーも打てる（吹っ飛ばす）
-    [SerializeField] private float playerFlingPower = 1.2f;    // 打つ強さに対する吹っ飛びの倍率
-    [SerializeField] private float playerHitRange = 2.5f;      // 相手を打てる距離 (m)。この範囲内ならどの向きからでも打てる
+    [SerializeField] private float playerFlingPower = 0.4f;    // 打つ強さ×この倍率＝吹っ飛ぶ勢い。まず弱めにして少しずつ上げる
+    [SerializeField] private float playerHitRange = 2.5f;      // 相手を打てる距離 (m)
     [SerializeField] private float playerPredictRadius = 0.3f; // 予測線で相手の体を見立てる半径 (m)
     [SerializeField] private float playerAimHeight = 1.0f;     // 予測線の開始高さ（相手の胸あたり m）
 
@@ -263,13 +263,24 @@ public class BallHitController : MonoBehaviour
     }
 
     /// スイングの当たる瞬間（swingHitDelay秒後）に相手プレイヤーを吹っ飛ばす。
+    /// IKnockbackable（方向＋威力を受け取る共通口）があればそちらへ渡す。無ければ従来の Fling。
     private IEnumerator FlingAfterSwing(RagdollController other, Vector3 direction, float power)
     {
         if (swingHitDelay > 0f)
         {
             yield return new WaitForSeconds(swingHitDelay);
         }
-        if (other != null && !other.IsDown)
+        if (other == null || other.IsDown)
+        {
+            yield break;
+        }
+
+        IKnockbackable knockable = other.GetComponent<IKnockbackable>();
+        if (knockable != null)
+        {
+            knockable.ApplyKnockback(direction.normalized, power);
+        }
+        else
         {
             other.Fling(direction.normalized * power);
         }
@@ -444,7 +455,7 @@ public class BallHitController : MonoBehaviour
         return IsPlayerAddressed(other.transform.position);
     }
 
-    /// 相手を打てる立ち位置か。「相手の**左後ろ**（既定）」に居るときだけ true。
+    /// 相手を打てる立ち位置か。「相手の左後ろ（既定）」に居るときだけ true（ボールと同じ考え方）。
     /// ・左側：対象が自分の右側にある（addressFromLeft=true のとき）
     /// ・後ろ側：対象が自分より前にある（＝自分が相手より前に出ていない）
     private bool IsPlayerAddressed(Vector3 targetPos)
@@ -469,7 +480,7 @@ public class BallHitController : MonoBehaviour
         }
         if (forward < 0f)
         {
-            return false; // 自分が対象より前に出ている＝「左前」なので打てない
+            return false; // 自分が対象より前＝「左前」なので打てない
         }
         return true;
     }
@@ -607,13 +618,19 @@ public class BallHitController : MonoBehaviour
             radius = playerPredictRadius;
         }
 
-        SimulateTrajectory(start, initialVelocity, radius, predictedPoints);
+        // プレイヤーの吹っ飛び線は、途中で打ち切られないよう長め（着地まで描き切る）。
+        // ボール用の制限（predictionSteps / maxPredictionDistance）が短いと、強い吹っ飛ばしで
+        // 線が上昇の途中で切れて「実際の軌道が線とかけ離れて見える」原因になる。
+        int steps = showBall ? predictionSteps : 300;
+        float maxDist = showBall ? maxPredictionDistance : 500f;
+
+        SimulateTrajectory(start, initialVelocity, radius, predictedPoints, steps, maxDist);
         aimLine.positionCount = predictedPoints.Count;
         aimLine.SetPositions(predictedPoints.ToArray());
     }
 
     /// 重力と跳ね返りを含めてボールの軌道を数値シミュレートし、点列を outPoints に入れる。
-    private void SimulateTrajectory(Vector3 start, Vector3 velocity, float radius, List<Vector3> outPoints)
+    private void SimulateTrajectory(Vector3 start, Vector3 velocity, float radius, List<Vector3> outPoints, int steps, float maxDistance)
     {
         outPoints.Clear();
         Vector3 pos = start;
@@ -623,7 +640,7 @@ public class BallHitController : MonoBehaviour
         float traveled = 0f; // 予測線の合計の長さ（長すぎたら打ち切る）
 
         outPoints.Add(pos);
-        for (int i = 0; i < predictionSteps; i++)
+        for (int i = 0; i < steps; i++)
         {
             vel += Physics.gravity * dt;
             Vector3 stepVec = vel * dt;
@@ -661,7 +678,7 @@ public class BallHitController : MonoBehaviour
 
             // 線が長くなりすぎたら打ち切る
             traveled += dist;
-            if (traveled >= maxPredictionDistance)
+            if (traveled >= maxDistance)
             {
                 break;
             }

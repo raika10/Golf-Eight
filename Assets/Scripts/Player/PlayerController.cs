@@ -1,6 +1,13 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
+/// プレイヤーの操作・移動・カメラ・スイングの見た目を担当する。
+/// ・WASD で移動、マウスで視点、移動は CharacterController が行う
+/// ・見た目は子の Mixamo モデル（Animator）。スイング中は見た目のモデルだけ横向きにする（本体・カメラ・当たり判定には影響しない）
+/// ・isLocalPlayer=false のプレイヤー（他プレイヤー/ダミー）は入力もカメラも扱わない
+/// ・倒れている間は RagdollController から SetRagdollMode で操作を止め、カメラだけ動かせるようにする
+///
+/// Player（CharacterController付き）に付ける。打撃時のスイングは BallHitController が制御する。
 [RequireComponent(typeof(CharacterController))]             // CharacterControllerコンポーネントの自動追加
 public class PlayerController : MonoBehaviour
 {
