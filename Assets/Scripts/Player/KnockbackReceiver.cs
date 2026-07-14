@@ -69,21 +69,19 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
         }
     }
 
-    /// 「方向＋威力」で吹っ飛ばす（IKnockbackable）。ダウン中・無敵中は無視。
-    public void ApplyKnockback(Vector3 direction, float power)
+    /// この方向・威力で吹っ飛ばした時の「実際の初速 v0」を返す。
+    /// minLaunchAngle（最低打ち上げ角）と powerMultiplier を反映するので、
+    /// 予測線をこの v0 で描けば、実際に飛ぶ軌道と完全に一致する。
+    public Vector3 GetLaunchVelocity(Vector3 direction, float power)
     {
-        if (IsKnockedDown || IsInvulnerable)
-        {
-            return;
-        }
         if (direction.sqrMagnitude < 1e-6f || power <= 0f)
         {
-            return;
+            return Vector3.zero;
         }
 
         Vector3 dir = direction.normalized;
 
-        // 最低の打ち上げ角を保証（0なら攻撃側の角度のまま＝予測線と完全一致）
+        // 最低の打ち上げ角を保証（0なら攻撃側の角度のまま）
         if (minLaunchAngle > 0f)
         {
             Vector3 flat = new Vector3(dir.x, 0f, dir.z);
@@ -99,7 +97,23 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
             }
         }
 
-        Vector3 v0 = dir * (power * powerMultiplier);
+        return dir * (power * powerMultiplier);
+    }
+
+    /// 「方向＋威力」で吹っ飛ばす（IKnockbackable）。ダウン中・無敵中は無視。
+    public void ApplyKnockback(Vector3 direction, float power)
+    {
+        if (IsKnockedDown || IsInvulnerable)
+        {
+            return;
+        }
+
+        // 実際の初速（打ち上げ角・倍率を反映）。予測線もこれと同じ計算で描いている。
+        Vector3 v0 = GetLaunchVelocity(direction, power);
+        if (v0.sqrMagnitude < 1e-6f)
+        {
+            return;
+        }
 
         // ragdoll化（操作無効＋ぐにゃぐにゃ）して全身に初速。以降の軌道は FlightRoutine が管理
         ragdoll.EnterRagdollWithVelocity(v0);

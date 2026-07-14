@@ -60,6 +60,9 @@ public class PlayerController : MonoBehaviour
     private Vector3 cameraVelocity;     // カメラ位置スムージング用の速度バッファ
     private bool cameraSnapped;         // 初回だけカメラを目標位置へ瞬間移動させる
     private bool ragdollMode;           // 倒れている間か（操作・アニメを止め、カメラを固定する）
+    private bool actionLocked;          // 空振りの後隙などで一時的に動けないか（見回しは可）
+    private float moveSpeedMultiplier = 1f; // 移動速度の倍率（チャージ中に落とす等。1=通常）
+    private bool swingHold;             // スイング構えを保持中か（true の間はジャンプで構えを崩さない）
     private Transform ragdollFollow;    // 倒れている間の参照（今は未使用。将来の追従用）
     private Vector3 ragdollPivot;       // 倒れた瞬間の注視点。倒れている間はここを軸にカメラを回す
 
@@ -95,6 +98,36 @@ public class PlayerController : MonoBehaviour
     public void SetSwingBodyOffset(float degrees)
     {
         swingVisualTarget = degrees;
+    }
+
+    /// 空振りの後隙などで一時的に動けなくする（見回し・重力は効く）。BallHitController から呼ぶ。
+    public void SetActionLocked(bool locked)
+    {
+        actionLocked = locked;
+    }
+
+    /// 移動速度の倍率を設定する（チャージ中に遅くする等）。1で通常。BallHitController から呼ぶ。
+    public void SetMoveSpeedMultiplier(float multiplier)
+    {
+        moveSpeedMultiplier = multiplier;
+    }
+
+    /// スイングの構え保持を切り替える。true の間はジャンプしてもジャンプアニメを出さず、構えを崩さない。
+    public void SetSwingHold(bool on)
+    {
+        swingHold = on;
+    }
+
+    /// 操作・カメラの担当をこのプレイヤーに切り替える／外す（デバッグ用の視点切替などに使う）。
+    /// on にする時はカメラを取り直す（複数プレイヤーで同じ Camera.main を使い回す前提）。
+    public void SetLocalPlayer(bool on)
+    {
+        isLocalPlayer = on;
+        if (on)
+        {
+            AcquireCamera();
+            cameraSnapped = false; // 切り替え直後はワープしてよい（新しい位置へスムージングさせない）
+        }
     }
 
     private void Awake()
@@ -173,8 +206,17 @@ public class PlayerController : MonoBehaviour
 
         UpdateLook();
 
+        // 空振りの後隙：移動できない（重力だけ効かせる）。見回しは UpdateLook で可能。
+        if (actionLocked)
+        {
+            UpdateVerticalVelocity();
+            controller.Move(new Vector3(0f, verticalVelocity, 0f) * Time.deltaTime);
+            UpdateAnimator(0f);
+            return;
+        }
+
         Vector3 moveInput = ReadMoveInput();
-        Vector3 horizontalMove = moveInput * moveSpeed;
+        Vector3 horizontalMove = moveInput * (moveSpeed * moveSpeedMultiplier); // チャージ中は倍率で減速
         UpdateVerticalVelocity();
 
         // 水平移動と上下移動を合成して1回で動かす
@@ -280,10 +322,19 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        // 注視点。通常はプレイヤーの少し上、倒れている間は「倒れる直前の場所」で固定する。
-        // 軸が固定されるだけで、視点操作（オービット）は通常とまったく同じ。
-        // 体の回転・移動はカメラに一切伝わらないので、一緒にぐるぐる回らない。
-        Vector3 pivot = ragdollMode ? ragdollPivot : transform.position + Vector3.up * cameraHeight;
+        // 注視点。通常はプレイヤーの少し上。倒れている間は「飛んでいる体（腰）」を追う。
+        // 視点操作（オービット）は通常と同じで、腰の位置を軸に回る。
+        // 体の回転はカメラに伝わらない（yaw/pitchはマウス由来）ので、一緒にぐるぐる回らない。
+        Vector3 pivot;
+        if (ragdollMode)
+        {
+            // 吹っ飛んでいる体（腰）に追従。取れなければ倒れた瞬間の位置で固定。
+            pivot = ragdollFollow != null ? ragdollFollow.position : ragdollPivot;
+        }
+        else
+        {
+            pivot = transform.position + Vector3.up * cameraHeight;
+        }
         // yaw（左右）＋pitch（上下）でカメラの向きを決め、その後方 cameraDistance に置く
         Quaternion rot = Quaternion.Euler(pitch, yaw, 0f);
         Vector3 targetPos = pivot - (rot * Vector3.forward) * cameraDistance;
@@ -335,7 +386,8 @@ public class PlayerController : MonoBehaviour
             {
                 // v = sqrt(2 * h * g) で目標の高さに届く初速を求める
                 verticalVelocity = Mathf.Sqrt(2f * jumpHeight * -gravity);
-                if (animator != null)
+                // スイング構え中はジャンプのアニメを出さない（クラブを振り上げたまま跳ぶ）。物理的なジャンプはする。
+                if (animator != null && !swingHold)
                 {
                     animator.SetTrigger(jumpHash);
                 }

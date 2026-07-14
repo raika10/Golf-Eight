@@ -19,7 +19,7 @@ public class BallHitController : MonoBehaviour
     [SerializeField] private bool useMouseAim = false;    // true=単体テスト用（マウス/ADで向き）。プレイヤーに載せるなら false
     [SerializeField] private float mouseYawSpeed = 0.2f;  // マウス感度（度/ピクセル）※useMouseAim時のみ
     [SerializeField] private float keyYawSpeed = 90f;     // A/D キーの旋回速度（度/秒）※useMouseAim時のみ
-    [SerializeField] private float loftAngle = 20f;       // 打ち上げ角（度）。0=水平, 大きいほど上へ
+    [SerializeField] private float loftAngle = 35f;       // 打ち上げ角（度）。0=水平, 大きいほど山なり（上へ）
     [SerializeField] private Transform aimSource;         // 向きの基準（未設定なら自分）。カメラ等を割り当ててもよい
     [SerializeField] private float aimSmoothTime = 0.05f; // 狙いのスムージング時間 (s)。マウスの微ブレで予想線が揺れるのを抑える
 
@@ -31,6 +31,13 @@ public class BallHitController : MonoBehaviour
     [SerializeField] private float downswingTime = 0.25f;     // 離してから振り下ろし切るまでの時間 (s)
     [SerializeField] private float swingHitDelay = 0.12f;     // 離してからボールが飛ぶまでの時間 (s)。当たりの瞬間に合わせる
     [SerializeField] private float swingBodyAngle = 120f;     // スイング中に見た目のキャラを横向きにする角度。+90〜120=体が右向き / -で左
+
+    [Header("どこでもスイング / 空振り")]
+    [SerializeField] private Key cancelKey = Key.E;           // このキーでチャージ解除
+    [SerializeField] private float minWhiffRecoverTime = 0.2f; // 空振り後隙の最小（溜め0での後隙）(s)
+    [SerializeField] private float whiffRecoverTime = 0.6f;    // 空振り後隙の最大（フルチャージでの後隙）(s)
+    [SerializeField] private float stumbleBodyAngle = 40f;    // よろけで体が反対へ泳ぐ角度（見た目だけ）
+    [SerializeField] private float chargeMoveSpeedScale = 0.5f;// チャージ中の歩き速度の倍率（0.5=半分）
 
     [Header("相手プレイヤーを打つ")]
     [SerializeField] private bool canHitPlayers = true;        // ボールと同じように相手プレイヤーも打てる（吹っ飛ばす）
@@ -47,15 +54,14 @@ public class BallHitController : MonoBehaviour
     [Header("アドレス（ボールは左側の近くだけ打てる）")]
     [SerializeField] private bool addressFromLeft = true;  // ボールの左側に立った時だけ打てる（オフなら右側）
     [SerializeField] private float minSideOffset = 0.3f;   // ボールが横方向にこれ以上離れていること (m)。真後ろからは打てない
-    [SerializeField] private float maxSideOffset = 1.0f;   // ボールが横方向にこれ以内であること (m)。離れすぎは打てない
+    [SerializeField] private float maxSideOffset = 1.4f;   // ボールが横方向にこれ以内であること (m)。離れすぎは打てない
     [SerializeField] private float maxForwardOfBall = 0.3f;// 自分がボールより「前」に出られる距離 (m)。小さいほど“ボールの前”から打てない
-    [SerializeField] private float maxBehindBall = 0.6f;   // 自分がボールより「後ろ」に下がれる距離 (m)
-    [SerializeField] private float chargeCancelBackDistance = 0.25f; // チャージ中にこれ以上ボールから離れたらキャンセル (m)
+    [SerializeField] private float maxBehindBall = 1.1f;   // 自分がボールより「後ろ」に下がれる距離 (m)
 
     [Header("強さ")]
     [SerializeField] private float minPower = 4f;         // 最小の打つ強さ（Impulse）
     [SerializeField] private float maxPower = 22f;        // 最大の打つ強さ
-    [SerializeField] private float chargeTime = 1.2f;     // 0→最大まで溜めるのにかかる時間 (s)
+    [SerializeField] private float chargeTime = 2f;     // 0→最大まで溜めるのにかかる時間 (s)
 
     [Header("予測線")]
     [SerializeField] private LineRenderer aimLine;              // 予測線（未設定なら自動生成）
@@ -65,13 +71,19 @@ public class BallHitController : MonoBehaviour
     [SerializeField] private LayerMask predictionObstacleMask = ~0; // 予測で跳ね返る対象（壁・地面など）
     [SerializeField] private bool stopAtFirstBounce = true;    // ゴルフゲーム風に、最初の着地（最初の衝突）で線を止める
     [SerializeField] private float maxPredictionDistance = 30f; // 予測線の最大の長さ (m)。これを超えたら打ち切る
+    [SerializeField] private float aimLineWidth = 0.16f;       // 予測線の太さ（手前側 m）。大きいほど見やすい
+    [SerializeField] private float aimLineTipWidthScale = 0.1f; // 先端の太さ＝手前の何倍か（0.1=1/10で先細り）
+    [SerializeField] private Color aimLineStartColor = new Color(1f, 0.9f, 0.2f, 1f);   // 手前側の色（明るい黄）
+    [SerializeField] private Color aimLineEndColor = new Color(1f, 0.45f, 0.1f, 0.85f); // 着地側の色（橙・少し薄め）
+    [SerializeField] private float aimLineHeightOffset = 0.05f; // 線を少し浮かせて地面との重なり（チラつき）を防ぐ (m)
+    [SerializeField] private float idleAimLineLength = 4f;      // 非チャージ時の目安線の長さ (m)。方向が分かる程度に短く切る
 
     private float currentYaw;         // 現在の水平の向き（度）※スムージング済み
     private float yawVelocity;        // SmoothDampAngle 用の速度バッファ
     private float currentCharge;      // 現在の溜め (0..1)
     private bool isCharging;          // 溜め中か
-    private float chargeStartDistance; // 溜め始めたときのボールまでの距離（後退キャンセル判定用）
-    private GolfBall targetBall;             // いま狙っているボール
+    private bool isRecovering;        // 空振り後の後隙中か（この間は新しいスイング不可・動けない）
+    private GolfBall targetBall;             // いま狙っている（構えられている）ボール
     private RagdollController targetPlayer;  // いま狙っている相手プレイヤー
     private RagdollController selfRagdoll;   // 自分（対象から除外する）
     private readonly List<Vector3> predictedPoints = new List<Vector3>();
@@ -90,6 +102,7 @@ public class BallHitController : MonoBehaviour
         selfColliders = GetComponentsInChildren<Collider>();
         currentYaw = AimTransform().eulerAngles.y;
         EnsureAimLine();
+        StyleAimLine();
 
         // アニメーター（キャラモデルの子）を自動取得
         if (animator == null)
@@ -182,12 +195,13 @@ public class BallHitController : MonoBehaviour
             return;
         }
 
-        // 押し始め：狙える対象（ボール or 相手プレイヤー）があれば溜め開始。開始時の距離を覚えておく
-        if (mouse.leftButton.wasPressedThisFrame && HasTarget())
+        // 押し始め：どこでも溜め開始できる（SBG風）。対象の有無は「離した瞬間」に判定する。
+        // 空振りの後隙中（isRecovering）や空中では始められない。
+        bool grounded = playerController == null || playerController.IsGrounded;
+        if (mouse.leftButton.wasPressedThisFrame && !isRecovering && grounded)
         {
             isCharging = true;
             currentCharge = 0f;
-            chargeStartDistance = FlatDistanceTo(TargetPosition());
 
             // スイング状態に入る（IsSwinging=true）。再生位置は SwingTime で直接指定する。
             if (animator != null)
@@ -195,10 +209,12 @@ public class BallHitController : MonoBehaviour
                 animator.SetBool(isSwingingHash, true);
                 animator.SetFloat(swingTimeHash, 0f);
             }
-            // 見た目のキャラを横向き（ゴルフの構え）にする
+            // 見た目のキャラを横向き（ゴルフの構え）にする＋歩き減速＋ジャンプで構えを崩さない
             if (playerController != null)
             {
                 playerController.SetSwingBodyOffset(swingBodyAngle);
+                playerController.SetMoveSpeedMultiplier(chargeMoveSpeedScale);
+                playerController.SetSwingHold(true);
             }
         }
 
@@ -207,22 +223,9 @@ public class BallHitController : MonoBehaviour
             return;
         }
 
-        // ジャンプしたら（＝空中に居たら）チャージを解除。空中からは打てない。
-        if (JumpPressedThisFrame() || (playerController != null && !playerController.IsGrounded))
-        {
-            CancelCharge();
-            return;
-        }
-
-        // 狙っていた対象が打てなくなったら溜めをキャンセル
-        if (!HasTarget())
-        {
-            CancelCharge();
-            return;
-        }
-
-        // 溜め中に少し後ろへ下がったらキャンセル（本物のゴルフのように、構えから離れたら仕切り直し）
-        if (FlatDistanceTo(TargetPosition()) > chargeStartDistance + chargeCancelBackDistance)
+        // 解除は E キー、またはジャンプで。対象の有無ではキャンセルしない
+        // ＝対象が無くても構え続けられる（離すと空振りになる）。
+        if (CancelPressedThisFrame() || JumpPressedThisFrame())
         {
             CancelCharge();
             return;
@@ -246,16 +249,28 @@ public class BallHitController : MonoBehaviour
             {
                 rig.Swing();
             }
-            StartCoroutine(DownSwing());
 
-            // 当たる瞬間に、ボールなら発射・相手プレイヤーなら吹っ飛ばす
+            // 離した瞬間に対象を判定：居れば当てる、居なければ空振り（よろけ＋後隙）
             if (targetPlayer != null)
             {
+                StartCoroutine(DownSwing());
                 StartCoroutine(FlingAfterSwing(targetPlayer, GetAimDirection(), CurrentPower() * playerFlingPower));
+            }
+            else if (targetBall != null)
+            {
+                StartCoroutine(DownSwing());
+                StartCoroutine(HitAfterSwing(targetBall, GetAimDirection(), CurrentPower()));
             }
             else
             {
-                StartCoroutine(HitAfterSwing(targetBall, GetAimDirection(), CurrentPower()));
+                // 範囲内に対象なし → 空振り。溜めが大きいほど後隙が長い（振り切りすぎて隙だらけ）
+                StartCoroutine(WhiffSwing(currentCharge));
+            }
+            // 溜め終了：歩き速度と構え保持を通常へ戻す（スイングのモーションは各コルーチンが進める）
+            if (playerController != null)
+            {
+                playerController.SetMoveSpeedMultiplier(1f);
+                playerController.SetSwingHold(false);
             }
             isCharging = false;
             currentCharge = 0f;
@@ -329,7 +344,77 @@ public class BallHitController : MonoBehaviour
         if (playerController != null)
         {
             playerController.SetSwingBodyOffset(0f); // 見た目の横向きを戻す
+            playerController.SetMoveSpeedMultiplier(1f); // 歩き速度を戻す
+            playerController.SetSwingHold(false);        // 構え保持を解除
         }
+    }
+
+    /// このフレームで解除キー（既定E）が押されたか。
+    private bool CancelPressedThisFrame()
+    {
+        Keyboard keyboard = Keyboard.current;
+        return keyboard != null && keyboard[cancelKey].wasPressedThisFrame;
+    }
+
+    /// このフレームでジャンプ入力があったか（チャージ解除の判定に使う）。
+    private bool JumpPressedThisFrame()
+    {
+        Keyboard keyboard = Keyboard.current;
+        return keyboard != null && keyboard.spaceKey.wasPressedThisFrame;
+    }
+
+    /// 範囲内に対象がいないのにスイングした時：空を切って、よろけ＋後隙（少しの間動けない）をさらす。
+    /// 後隙中は動けず新しいスイングもできないので、相手に打ち返される「スキ」になる。
+    private IEnumerator WhiffSwing(float charge)
+    {
+        // 溜めが大きいほど後隙が長い（min〜max を charge で補間）
+        float recoverTime = Mathf.Lerp(minWhiffRecoverTime, whiffRecoverTime, Mathf.Clamp01(charge));
+
+        isRecovering = true;
+        if (playerController != null)
+        {
+            playerController.SetActionLocked(true); // 後隙：この間は動けない
+        }
+
+        // まず普通に振り切る（空を切る）。DownSwing と同じ動きで体の横向きも正面へ戻す。
+        float start = animator != null ? animator.GetFloat(swingTimeHash) : 0f;
+        for (float t = 0f; t < downswingTime; t += Time.deltaTime)
+        {
+            float k = Mathf.Clamp01(t / Mathf.Max(0.01f, downswingTime));
+            if (animator != null)
+            {
+                animator.SetFloat(swingTimeHash, Mathf.Lerp(start, 1f, k));
+            }
+            if (playerController != null)
+            {
+                playerController.SetSwingBodyOffset(Mathf.Lerp(swingBodyAngle, 0f, k));
+            }
+            yield return null;
+        }
+        if (animator != null)
+        {
+            animator.SetFloat(swingTimeHash, 1f);
+            animator.SetBool(isSwingingHash, false); // 通常（歩き/待機）へ戻す
+        }
+
+        // よろけ：勢い余って反対側へ体が泳ぎ、ゆっくり戻る（後隙の見た目）。時間は溜めに比例。
+        for (float t = 0f; t < recoverTime; t += Time.deltaTime)
+        {
+            float k = t / Mathf.Max(0.01f, recoverTime);
+            float wobble = Mathf.Sin(k * Mathf.PI) * -stumbleBodyAngle; // 0 → -角度 → 0 の山なり
+            if (playerController != null)
+            {
+                playerController.SetSwingBodyOffset(wobble);
+            }
+            yield return null;
+        }
+
+        if (playerController != null)
+        {
+            playerController.SetSwingBodyOffset(0f);
+            playerController.SetActionLocked(false); // 後隙おわり：また動ける
+        }
+        isRecovering = false;
     }
 
     /// スイングの当たる瞬間（swingHitDelay秒後）にボールを発射する。向き・強さは離した瞬間の値。
@@ -544,13 +629,6 @@ public class BallHitController : MonoBehaviour
         return transform.position;
     }
 
-    /// このフレームでジャンプ入力があったか（チャージ解除の判定に使う）。
-    private bool JumpPressedThisFrame()
-    {
-        Keyboard keyboard = Keyboard.current;
-        return keyboard != null && keyboard.spaceKey.wasPressedThisFrame;
-    }
-
     /// ボールまでの水平距離（高さは無視）。
     private float FlatDistanceTo(GolfBall ball)
     {
@@ -588,17 +666,20 @@ public class BallHitController : MonoBehaviour
             return;
         }
 
-        // ResolveTarget 済みなので、残っている対象がそのまま予測線の対象になる
         bool showBall = targetBall != null;
         bool showPlayer = targetPlayer != null;
 
+        // ボール／相手を「打てる位置」で構えている時だけ線を出す。
+        // チャージはどこでもできるが、打てない場所（対象なし）では線を出さない。
         aimLine.enabled = showBall || showPlayer;
         if (!aimLine.enabled)
         {
             return;
         }
 
-        float power = isCharging ? CurrentPower() : minPower;
+        // 溜め中は今の強さで着弾予測。溜めていない時は最大強さの弧を「狙いの目安線」として出す
+        //（minPower だと弧が短すぎてほぼ見えないため。打てる位置に入ったことがはっきり分かる）。
+        float power = isCharging ? CurrentPower() : maxPower;
         Vector3 start;
         Vector3 initialVelocity;
         float radius;
@@ -610,11 +691,20 @@ public class BallHitController : MonoBehaviour
             initialVelocity = GetAimDirection() * (power / Mathf.Max(0.0001f, targetBall.Mass));
             radius = targetBall.Radius;
         }
-        else
+        else // showPlayer
         {
-            // Fling は速度を直接与えるので、初速 = 強さ × 倍率。体は胸あたりから飛ぶ想定。
+            // 体は胸あたりから飛ぶ想定。KnockbackReceiver があれば、実際の初速計算
+            //（最低打ち上げ角 minLaunchAngle・powerMultiplier 込み）で予測線を描いて軌道と一致させる。
             start = targetPlayer.transform.position + Vector3.up * playerAimHeight;
-            initialVelocity = GetAimDirection() * (power * playerFlingPower);
+            KnockbackReceiver receiver = targetPlayer.GetComponent<KnockbackReceiver>();
+            if (receiver != null)
+            {
+                initialVelocity = receiver.GetLaunchVelocity(GetAimDirection(), power * playerFlingPower);
+            }
+            else
+            {
+                initialVelocity = GetAimDirection() * (power * playerFlingPower);
+            }
             radius = playerPredictRadius;
         }
 
@@ -624,7 +714,23 @@ public class BallHitController : MonoBehaviour
         int steps = showBall ? predictionSteps : 300;
         float maxDist = showBall ? maxPredictionDistance : 500f;
 
+        // 非チャージ時は弧の最初だけ描いて「方向の目安」に留める（長い弧は見にくいため）
+        if (!isCharging)
+        {
+            maxDist = idleAimLineLength;
+        }
+
         SimulateTrajectory(start, initialVelocity, radius, predictedPoints, steps, maxDist);
+
+        // 少し上に浮かせて地面と重ならないようにする（Zファイト＝チラつきを防ぎ、見やすく）
+        if (aimLineHeightOffset != 0f)
+        {
+            for (int i = 0; i < predictedPoints.Count; i++)
+            {
+                predictedPoints[i] += Vector3.up * aimLineHeightOffset;
+            }
+        }
+
         aimLine.positionCount = predictedPoints.Count;
         aimLine.SetPositions(predictedPoints.ToArray());
     }
@@ -696,15 +802,30 @@ public class BallHitController : MonoBehaviour
         GameObject lineObject = new GameObject("AimLine");
         lineObject.transform.SetParent(transform, false);
         aimLine = lineObject.AddComponent<LineRenderer>();
-        aimLine.widthMultiplier = 0.08f;
-        aimLine.numCapVertices = 4;
         aimLine.useWorldSpace = true;
         aimLine.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         aimLine.receiveShadows = false;
+        // 影を受けず常に一定の明るさで見えるよう、Unlit系のスプライトシェーダを使う
         aimLine.material = new Material(Shader.Find("Sprites/Default"));
-        aimLine.startColor = Color.white;
-        aimLine.endColor = new Color(1f, 1f, 1f, 0.2f);
         aimLine.enabled = false;
+    }
+
+    /// 予測線の見た目（太さ・色・角の滑らかさ）を適用する。作成時も、Inspectorで割り当てた線にも効く。
+    private void StyleAimLine()
+    {
+        if (aimLine == null)
+        {
+            return;
+        }
+        // 手前を太く、先を細く（先細り）。widthCurve は 0..1 の割合、実寸は widthMultiplier 倍。
+        aimLine.widthCurve = AnimationCurve.Linear(0f, 1f, 1f, Mathf.Clamp01(aimLineTipWidthScale));
+        aimLine.widthMultiplier = aimLineWidth;
+        aimLine.numCapVertices = 6;             // 端を丸める
+        aimLine.numCornerVertices = 6;          // 角を丸めて滑らかに
+        aimLine.textureMode = LineTextureMode.Stretch;
+        aimLine.alignment = LineAlignment.View; // 常にカメラ正面を向く＝どの角度でも太さが見える
+        aimLine.startColor = aimLineStartColor;
+        aimLine.endColor = aimLineEndColor;
     }
 
     // シーンビューで打てる範囲を確認できるように
