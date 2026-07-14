@@ -26,14 +26,12 @@ public class RagdollController : MonoBehaviour
     [Header("ボールに当たったら倒れる")]
     [SerializeField] private bool flingOnBallHit = true;      // 速いボールに当たったら倒れる
     [SerializeField] private float ballFlingSpeed = 8f;       // この速さ以上のボールに当たったら倒れる (m/s)
-    [SerializeField] private LayerMask ballMask = ~0;         // ボール探索の対象レイヤー
 
     [Header("テスト用（他プレイヤーに突き飛ばされた再現）")]
     [SerializeField] private bool enableTestKey = true;       // キーで吹っ飛びを再現できるようにする
     [SerializeField] private Key testFlingKey = Key.R;        // このキーで吹っ飛ぶ
     [SerializeField] private float testFlingSpeed = 9f;       // 吹っ飛ぶ勢い (m/s)
 
-    private static readonly Collider[] overlapBuffer = new Collider[16];
     private static readonly RaycastHit[] groundHits = new RaycastHit[16];
 
     private CharacterController cc;
@@ -133,7 +131,6 @@ public class RagdollController : MonoBehaviour
         if (!isRagdoll)
         {
             CheckTestKey(); // テスト用：キーで吹っ飛ばされた状態を再現
-            CheckBallHit(); // 速いボールが飛んで来たら倒れる
             return;
         }
         // 内蔵の自動起き上がり。KnockbackReceiver が管理しているとき（Suppress中）は使わない
@@ -162,55 +159,23 @@ public class RagdollController : MonoBehaviour
         }
     }
 
-    /// 自分に向かって飛んで来る速いボールに当たったら倒れる。
-    /// 「向かってくる」ボールだけ見るので、自分が打った直後（遠ざかる）ボールでは倒れない。
-    private void CheckBallHit()
+    /// ボール（GolfBall）が物理的に衝突した瞬間に呼ばれる（GolfBall.OnCollisionEnter から）。
+    /// relativeVelocity は衝突の瞬間の正確な相対速度（Collision.relativeVelocity）なので、
+    /// 「同フレーム内で跳ね返った後に判定して逃げ方向と誤判定される」ことがなく、
+    /// 遅いボールで誤って飛ぶこともない（衝突の瞬間の実測値で閾値判定するため）。
+    public void ApplyBallImpact(Vector3 relativeVelocity)
     {
-        if (!flingOnBallHit || cc == null)
+        if (!flingOnBallHit || isRagdoll)
         {
             return;
         }
-
-        // CharacterController のカプセルの少し外側を調べる
-        Vector3 center = transform.TransformPoint(cc.center);
-        float half = Mathf.Max(0f, cc.height * 0.5f - cc.radius);
-        Vector3 top = center + Vector3.up * half;
-        Vector3 bottom = center - Vector3.up * half;
-        float radius = cc.radius + 0.15f;
-
-        int count = Physics.OverlapCapsuleNonAlloc(top, bottom, radius, overlapBuffer, ballMask, QueryTriggerInteraction.Ignore);
-        for (int i = 0; i < count; i++)
+        float speed = relativeVelocity.magnitude;
+        if (speed < ballFlingSpeed)
         {
-            GolfBall ball = overlapBuffer[i].GetComponentInParent<GolfBall>();
-            if (ball == null)
-            {
-                continue;
-            }
-            Rigidbody rb = ball.GetComponent<Rigidbody>();
-            if (rb == null || rb.isKinematic)
-            {
-                continue; // 止まって固定されたボールは無視
-            }
-
-            Vector3 v = rb.linearVelocity;
-            float speed = v.magnitude;
-            if (speed < ballFlingSpeed)
-            {
-                continue;
-            }
-
-            // 自分の方へ向かって来ているか（遠ざかるボールでは倒れない）
-            Vector3 toMe = (transform.position - ball.transform.position);
-            toMe.y = 0f;
-            if (toMe.sqrMagnitude > 1e-6f && Vector3.Dot(v.normalized, toMe.normalized) < 0.2f)
-            {
-                continue;
-            }
-
-            Vector3 dir = (v.normalized + Vector3.up * 0.4f).normalized;
-            Fling(dir * speed);
-            return;
+            return; // 遅すぎるボールでは飛ばない
         }
+        Vector3 dir = (relativeVelocity.normalized + Vector3.up * 0.4f).normalized;
+        Fling(dir * speed);
     }
 
     /// 他プレイヤーなどに飛ばされて倒れる。velocity は吹き飛ぶ勢い。

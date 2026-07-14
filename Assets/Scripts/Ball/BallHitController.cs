@@ -426,7 +426,7 @@ public class BallHitController : MonoBehaviour
         }
         if (ball != null && !ball.IsHoled)
         {
-            ball.Hit(direction, power);
+            ball.Hit(direction, power, selfRagdoll);
         }
     }
 
