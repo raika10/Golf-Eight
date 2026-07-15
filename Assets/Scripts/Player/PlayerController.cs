@@ -84,6 +84,15 @@ public class PlayerController : MonoBehaviour
         }
     }
 
+    /// 着地後、カメラを「追従」から「固定位置(pivot)」に切り替える。
+    /// 着地後スタン中は体が物理で微妙に動くので、それを追うと視点操作時にカクつく。
+    /// 着地点を軸に固定すれば、体を追わずに滑らかにオービットできる。
+    public void FreezeRagdollCameraAt(Vector3 pivotWorldPos)
+    {
+        ragdollFollow = null;      // もう飛んでいる体は追わない
+        ragdollPivot = pivotWorldPos; // 着地点を軸にする
+    }
+
     /// 狙い/移動の基準になる向き（度）。見た目のスイング横向きは含まない論理的な向き。
     public float AimYaw => yaw;
 

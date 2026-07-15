@@ -214,20 +214,48 @@ public class RagdollController : MonoBehaviour
             b.angularDamping = 0.05f;
             b.angularVelocity = Vector3.zero;
             b.linearVelocity = velocity;      // 全身に同じ初速 → 重心が放物線（弧）を描く
+            // 補間オン：物理は50Hzだが描画は毎フレーム補間される。これが無いと手足・頭が
+            // 物理レートでしか更新されず、高フレームレート時にカクカクして見える（見た目のガタつき）。
+            b.interpolation = RigidbodyInterpolation.Interpolate;
         }
     }
 
-    /// 起き上がってアニメ状態に戻る。倒れた体（腰）が止まった場所の地面に立って復活する。
+    /// 起き上がってアニメ状態に戻る。倒れた体（腰）が「今」止まっている場所の地面に立って復活する。
+    /// 着地後スタン中に誰かに押されて位置がズレている可能性があるので、着地直後の位置を使いたい
+    /// 場合は RecoverAtHips(Vector3) を使うこと（KnockbackReceiver はそちらを使う）。
     public void Recover()
     {
         Vector3 pos = transform.position;
         if (hipsBone != null)
         {
-            Vector3 hips = hipsBone.position;
-            float groundY = FindGroundY(hips);
-            pos = new Vector3(hips.x, groundY + recoverYOffset, hips.z);
+            pos = ComputeStandPosition(hipsBone.position);
         }
         RecoverAt(pos);
+    }
+
+    /// 指定した腰の位置を基準に、その真下の地面に立って復活する。
+    /// 着地した瞬間の位置を KnockbackReceiver 側で記録しておき、ここに渡すことで、
+    /// スタン中（起き上がるまでの間）に他プレイヤーにぶつかられて体が押されても、
+    /// 起き上がり位置が「本来着地した場所」からズレないようにする。
+    public void RecoverAtHips(Vector3 hipsPosition)
+    {
+        RecoverAt(ComputeStandPosition(hipsPosition));
+    }
+
+    /// 指定した腰の位置の真下の地面に、直立で立つときの位置を計算する。
+    private Vector3 ComputeStandPosition(Vector3 hipsPosition)
+    {
+        float groundY = FindGroundY(hipsPosition);
+        return new Vector3(hipsPosition.x, groundY + recoverYOffset, hipsPosition.z);
+    }
+
+    /// 着地後、カメラを追従から着地点固定に切り替える（KnockbackReceiver が着地時に呼ぶ）。
+    public void FreezeRagdollCamera(Vector3 worldPos)
+    {
+        if (playerController != null)
+        {
+            playerController.FreezeRagdollCameraAt(worldPos);
+        }
     }
 
     /// 指定した位置で起き上がってアニメ状態に戻る（場外リスポーンなどに使う）。
@@ -264,6 +292,30 @@ public class RagdollController : MonoBehaviour
             }
         }
         return best;
+    }
+
+    /// 骨を「今のポーズのまま」固定（キネマティック）する。物理シミュレーションが止まるので、
+    /// 動いているカメラから見てもカクつかない（着地後スタン中にこれを呼んで動きを止める）。
+    /// ポーズは崩れた形のまま保持される。RecoverAt でアニメ状態に戻すまで動かない。
+    public void FreezeBonesPose()
+    {
+        if (bones == null)
+        {
+            return;
+        }
+        foreach (Rigidbody b in bones)
+        {
+            if (b == null)
+            {
+                continue;
+            }
+            if (!b.isKinematic)
+            {
+                b.linearVelocity = Vector3.zero;
+                b.angularVelocity = Vector3.zero;
+            }
+            b.isKinematic = true; // 物理停止＝完全静止＝どのカメラから見ても滑らか
+        }
     }
 
     /// 操作・移動・打撃・アニメの有効/無効を切り替える（active=通常時）。

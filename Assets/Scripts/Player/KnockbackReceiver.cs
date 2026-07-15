@@ -41,6 +41,7 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
     private RagdollController ragdoll;
     private Rigidbody hips;
     private Vector3 initialPosition;  // 開始位置（respawnPoint 未設定時のリスポーン先）
+    private Vector3 landedHipsPosition; // 着地した瞬間の腰の位置（スタン中に押されても起き上がり位置をズレさせないため）
     private float graceUntil;         // この時刻まで無敵
     private Coroutine flightRoutine;
     private static readonly RaycastHit[] groundHits = new RaycastHit[8];
@@ -134,31 +135,48 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
         }
     }
 
-    /// 飛行：全身が v0＋重力の純粋な弾道で飛ぶのを見守り、地面が近づいたら着地させる。
-    /// 骨の当たり判定は切ってある（ApplyKnockback参照）ので、足が地面に引っかからず、
-    /// 重心は予測線と同じ放物線 p(t)=p0+v0*t+1/2*g*t^2 を描く（関節は内力＝作用反作用なので重心の運動量を変えない）。
-    /// 手足は関節でぶら下がったまま＝ぐにゃぐにゃは維持される。
+    /// 飛行：腰（Hips）の速度を毎物理ステップ、理想の放物線速度 v(t)=v0+g*t に矯正し続ける。
+    /// 関節に引っ張られようが、何が起きようが、腰は常に「正しい方向・正しい速さ」へ押し戻されるので、
+    /// 軌道が予測線からズレることがない（パルス的に毎ステップ同じ計算で力＝速度を与え直すイメージ）。
+    /// 手足は関節でぶら下がったまま自由に動く＝ぐにゃぐにゃは維持される（腰だけを矯正し、他は矯正しない）。
     ///
     /// 重要：骨をキネマティック→ダイナミックに切り替えた「最初の1物理ステップ」で、関節（CharacterJoint）が
     /// 　現在ポーズへスナップする勢いに v0 が食われて速度がほぼ0になることがある（＝打った所から飛ばない）。
-    /// 　そこで最初のFixedUpdateを1回待って関節が落ち着いてから、全骨へ v0 を「もう一度」与え直す。
+    /// 　そこで最初のFixedUpdateを1回待ってから、全骨へ v0 を与える。
     private IEnumerator FlightRoutine(Vector3 v0)
     {
-        float t = 0f;
-
-        // 1ステップ待ってから初速を与え直す（関節スナップに食われた分を取り戻す）
+        // 1ステップ待ってから全骨へ初速を与える（関節スナップに食われた分を取り戻す）。
+        // 手足はこの v0 と重力で腰と同じ放物線を飛ぶので、腰から離れず一緒に飛ぶ。
         yield return new WaitForFixedUpdate();
         ragdoll.SetAllBonesVelocity(v0);
-        // 各骨にランダムな回転を加えて手足をバタつかせる（重心の直線運動＝予測線は変わらない）
+        // 各骨にランダムな回転を加えて手足をバタつかせる（ぐにゃぐにゃ）
         if (floppiness > 0f)
         {
             ragdoll.AddRandomSpin(floppiness);
         }
 
+        Vector3 startPos = hips.position; // 基準点（この時刻を t=0 とする放物線を描く）
+
+        // 腰をキネマティック化し、補間はオフにする。
+        // ★カクつきの根本原因対策★：カメラ(LateUpdate)が追う位置と、実際に描画される位置がズレると、
+        //   視点を動かした時に体がカクついて見える（物理は50Hz、補間はLateUpdateの後に適用されるため）。
+        //   そこで腰を「物理レート」ではなく「描画フレームごと(yield return null)」に自前で動かす。
+        //   こうするとカメラが読む位置＝描画される位置になり、視点を動かしても一切カクつかない。
+        //   補間はこの自前更新と衝突するのでオフにする（毎フレーム正確な位置を入れるので補間は不要）。
+        hips.isKinematic = true;
+        hips.interpolation = RigidbodyInterpolation.None;
+
+        float t = 0f;
         while (t < maxFlightTime)
         {
-            yield return new WaitForFixedUpdate();
-            t += Time.fixedDeltaTime;
+            yield return null;          // 描画フレームごと＝カメラと同じタイミングで位置を更新
+            t += Time.deltaTime;
+
+            // 腰を式どおりの位置へ（キネマティックなので何にも邪魔されない・描画フレーム精度で滑らか）
+            hips.transform.position = startPos + v0 * t + 0.5f * Physics.gravity * (t * t);
+
+            // 着地判定は式から計算した鉛直速度で行う
+            float vy = v0.y + Physics.gravity.y * t;
 
             // 発射直後（minAirTime秒）は着地判定しない。足元に地面がある状態で始まるので即着地を防ぐ
             if (t < minAirTime)
@@ -166,13 +184,19 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
                 continue;
             }
             // 落下に転じてから足元（腰の下）に地面が来たら着地
-            if (hips.linearVelocity.y < 0f && IsGroundBelow(hips.position, groundDetectDistance))
+            if (vy < 0f && IsGroundBelow(hips.transform.position, groundDetectDistance))
             {
                 break;
             }
         }
 
+        hips.interpolation = RigidbodyInterpolation.Interpolate; // 着地後の物理描画用に補間を戻す
+
+        hips.isKinematic = false;         // 着地：腰を物理に戻して崩れられるように
         flightRoutine = null;
+        // 着地した瞬間の位置を記録する。この後スタンで倒れている間に他プレイヤーへ押されて
+        // 位置がズレても、起き上がりは「本来着地した場所」を使う（StunThenRecover参照）。
+        landedHipsPosition = hips.position;
         Land();
     }
 
@@ -196,7 +220,8 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
     private IEnumerator StunThenRecover()
     {
         yield return new WaitForSeconds(stunTime);
-        ragdoll.Recover();                    // 倒れた場所の地面に立って復活
+        // 着地した瞬間の位置で復活する（スタン中に押されて体が動いていても、その影響を受けない）
+        ragdoll.RecoverAtHips(landedHipsPosition);
         graceUntil = Time.time + graceTime;   // 起き上がり直後は無敵
     }
 
