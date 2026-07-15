@@ -23,6 +23,10 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
     [SerializeField] private float maxFlightTime = 6f;   // 飛行の最大時間 (s)。保険
     [SerializeField] private float groundDetectDistance = 1.0f; // 腰の下このm以内に地面が来たら着地（立ち姿勢の腰の高さ）
     [SerializeField] private float minAirTime = 0.15f;   // 発射直後この秒数は着地判定しない（即着地を防ぐ）
+    [SerializeField] private float wallCheckRadius = 0.35f; // 飛行中、進行方向の壁を調べる球の半径 (m)
+    [SerializeField] private LayerMask wallMask = ~0;    // 壁とみなす対象レイヤー（自分の骨は自動で無視）
+    [SerializeField] private float wallBounciness = 0.6f; // 壁で反射した時に残る勢いの割合（1=減らない, 0.6=ボール風）
+    [SerializeField] private float minBounceSpeed = 1.5f; // 反射後この速さ未満なら跳ねずに着地 (m/s)
 
     [Header("ぐにゃぐにゃ具合")]
     [Tooltip("飛行中の手足のバタつき。大きいほどぐにゃぐにゃ回る（重心の軌道＝予測線は変わらない）")]
@@ -45,6 +49,7 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
     private float graceUntil;         // この時刻まで無敵
     private Coroutine flightRoutine;
     private static readonly RaycastHit[] groundHits = new RaycastHit[8];
+    private static readonly RaycastHit[] wallHits = new RaycastHit[8];
 
     /// いま吹っ飛ばされてダウン中か。
     public bool IsKnockedDown => ragdoll != null && ragdoll.IsDown;
@@ -155,7 +160,16 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
             ragdoll.AddRandomSpin(floppiness);
         }
 
-        Vector3 startPos = hips.position; // 基準点（この時刻を t=0 とする放物線を描く）
+        Vector3 startPos = hips.position; // 放物線の起点（壁で反射するたびにここを更新する）
+        Vector3 vel = v0;                 // 現在の速度（壁で反射するたびに変わる）
+
+        // 発射時の「腰〜地面の隙間」を測っておく。飛行中はこの高さより腰を下げない＝足がめり込まない。
+        // これが無いと、弱い力で打った時に腰がほとんど上がらず、放物線が下がって足が地面をすり抜ける。
+        float clearance = 0.9f;
+        if (TryGetGroundY(startPos, out float startGroundY))
+        {
+            clearance = Mathf.Max(0.2f, startPos.y - startGroundY);
+        }
 
         // 腰をキネマティック化し、補間はオフにする。
         // ★カクつきの根本原因対策★：カメラ(LateUpdate)が追う位置と、実際に描画される位置がズレると、
@@ -172,19 +186,45 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
             yield return null;          // 描画フレームごと＝カメラと同じタイミングで位置を更新
             t += Time.deltaTime;
 
-            // 腰を式どおりの位置へ（キネマティックなので何にも邪魔されない・描画フレーム精度で滑らか）
-            hips.transform.position = startPos + v0 * t + 0.5f * Physics.gravity * (t * t);
+            // 式どおりの放物線の位置（起点 startPos・速度 vel は、壁で反射するたびに更新される）
+            Vector3 pos = startPos + vel * t + 0.5f * Physics.gravity * (t * t);
+            float vy = vel.y + Physics.gravity.y * t; // 予測式の鉛直速度
 
-            // 着地判定は式から計算した鉛直速度で行う
-            float vy = v0.y + Physics.gravity.y * t;
-
-            // 発射直後（minAirTime秒）は着地判定しない。足元に地面がある状態で始まるので即着地を防ぐ
-            if (t < minAirTime)
+            // 壁チェック：進む間に壁があればボールのように反射して飛び続ける
+            //（飛行中は骨の当たり判定がOFFなので、これが無いと壁をすり抜ける）。
+            Vector3 curr = hips.transform.position;
+            Vector3 delta = pos - curr;
+            float moveDist = delta.magnitude;
+            if (moveDist > 1e-4f && TryWallHit(curr, delta / moveDist, moveDist, out Vector3 wallStop, out Vector3 wallNormal))
             {
+                Vector3 vHit = vel + Physics.gravity * t;                 // 衝突した瞬間の速度
+                vel = Vector3.Reflect(vHit, wallNormal) * wallBounciness; // 壁の法線で反射（勢いは倍率だけ残す）
+                startPos = wallStop;                                     // 壁の手前を新しい起点に
+                hips.transform.position = wallStop;
+                t = 0f;                                                  // 反射地点から新しい放物線を始める
+                if (vel.magnitude < minBounceSpeed)
+                {
+                    break; // 反射後の勢いが弱ければ、跳ねずにその場で着地
+                }
                 continue;
             }
-            // 落下に転じてから足元（腰の下）に地面が来たら着地
-            if (vy < 0f && IsGroundBelow(hips.transform.position, groundDetectDistance))
+
+            // 腰を地面の上（clearance）より下げない＝足がめり込まない。地面に達したかも判定する。
+            bool onGround = false;
+            if (TryGetGroundY(pos, out float groundY))
+            {
+                float floorY = groundY + clearance;
+                if (pos.y <= floorY)
+                {
+                    pos.y = floorY; // これ以上沈ませない
+                    onGround = true;
+                }
+            }
+            hips.transform.position = pos;
+
+            // 発射直後（minAirTime秒）は着地判定しない（足元に地面がある状態で始まるので即着地を防ぐ）。
+            // それ以降、落下中に地面（clearance）に達したら着地。
+            if (t >= minAirTime && vy < 0f && onGround)
             {
                 break;
             }
@@ -235,6 +275,61 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
         ragdoll.RecoverAt(pos);
         graceUntil = Time.time + graceTime;
         onRespawned?.Invoke();
+    }
+
+    /// from から dir 方向へ dist だけ進む間に壁があるか調べ、あれば止まるべき位置と壁の法線を返す。
+    /// 自分の骨は無視。床/地面（法線が上向き）は壁として扱わない（地面クランプ側で処理するため）。
+    private bool TryWallHit(Vector3 from, Vector3 dir, float dist, out Vector3 stopPos, out Vector3 normal)
+    {
+        stopPos = from;
+        normal = Vector3.up;
+        int count = Physics.SphereCastNonAlloc(from, wallCheckRadius, dir, wallHits, dist, wallMask, QueryTriggerInteraction.Ignore);
+        float best = float.MaxValue;
+        bool found = false;
+        for (int i = 0; i < count; i++)
+        {
+            RaycastHit h = wallHits[i];
+            if (h.collider == null || h.collider.transform.IsChildOf(transform))
+            {
+                continue; // 自分の骨は無視
+            }
+            if (h.normal.y > 0.5f)
+            {
+                continue; // ほぼ水平な面＝床/地面。壁ではないので無視
+            }
+            if (h.distance < best)
+            {
+                best = h.distance;
+                stopPos = from + dir * Mathf.Max(0f, h.distance) + h.normal * wallCheckRadius; // 壁の手前
+                normal = h.normal;
+                found = true;
+            }
+        }
+        return found;
+    }
+
+    /// 指定位置の真下で一番近い地面の高さ(Y)を返す（自分の骨は無視）。飛行中は骨のコライダーOFFなので地面に当たる。
+    private bool TryGetGroundY(Vector3 from, out float groundY)
+    {
+        int count = Physics.RaycastNonAlloc(from + Vector3.up * 0.5f, Vector3.down, groundHits, 40f, ~0, QueryTriggerInteraction.Ignore);
+        bool found = false;
+        float bestDist = float.MaxValue;
+        groundY = 0f;
+        for (int i = 0; i < count; i++)
+        {
+            Collider col = groundHits[i].collider;
+            if (col == null || col.transform.IsChildOf(transform))
+            {
+                continue; // 自分の骨は無視
+            }
+            if (groundHits[i].distance < bestDist)
+            {
+                bestDist = groundHits[i].distance;
+                groundY = groundHits[i].point.y;
+                found = true;
+            }
+        }
+        return found;
     }
 
     /// 指定位置の下に地面があるか（自分の骨は無視する）。
