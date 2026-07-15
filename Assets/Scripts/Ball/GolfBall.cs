@@ -25,10 +25,15 @@ public class GolfBall : MonoBehaviour
     [SerializeField] private bool ownedByLocalPlayer = false; // このボールがこの画面の操作者のものか
     [SerializeField] private Renderer seeThroughRenderer;     // 遮蔽時に透過表示するシルエット用の子Renderer
 
+    [Header("プレイヤーへの衝突")]
+    [SerializeField] private float hitImmunityTime = 0.2f; // 打った直後、自分の体に当たって誤爆しないための猶予 (s)
+
     private Rigidbody body;
     private SphereCollider sphere;
     private float slowTimer; // 遅い状態が続いている時間
     private bool isResting;  // 止まって固定中か（プレイヤー等に押されてもブレないようロックしている）
+    private RagdollController lastHitBy;    // 直近このボールを打ったプレイヤー（自爆防止用）
+    private float lastHitTime = -999f;      // 直近打たれた時刻
 
     /// このボールがローカル操作者のものか。
     public bool OwnedByLocalPlayer => ownedByLocalPlayer;
@@ -112,7 +117,8 @@ public class GolfBall : MonoBehaviour
 
     /// このボールを打つ。direction の向きに power の強さで飛ばす。
     /// power が大きいほど初速が上がり飛距離が伸びる。誰が呼んでもよい（誰でも誰のボールを打てる）。
-    public void Hit(Vector3 direction, float power)
+    /// hitBy を渡すと、打った直後にその人自身の体へ当たっても誤爆で吹っ飛ばさない（hitImmunityTime秒間）。
+    public void Hit(Vector3 direction, float power, RagdollController hitBy = null)
     {
         if (IsHoled || direction.sqrMagnitude < 0.0001f || power <= 0f)
         {
@@ -131,6 +137,27 @@ public class GolfBall : MonoBehaviour
         body.AddForce(direction.normalized * power, ForceMode.Impulse);
 
         slowTimer = 0f; // 動き出したので停止タイマーをリセット
+        lastHitBy = hitBy;
+        lastHitTime = Time.time;
+    }
+
+    /// プレイヤー（RagdollController）に物理的に衝突した瞬間に呼ばれる。
+    /// 衝突時点の正確な相対速度（Collision.relativeVelocity）を使うので、
+    /// 「同フレーム内で跳ね返った後に判定して逃げ方向と誤判定される」ことがなく、
+    /// 遅いボールで誤って吹っ飛ぶこともない（速度がその瞬間の実測値だから）。
+    private void OnCollisionEnter(Collision collision)
+    {
+        RagdollController rc = collision.collider.GetComponentInParent<RagdollController>();
+        if (rc == null)
+        {
+            return;
+        }
+        // 打った直後、自分の体に触れて誤爆するのを防ぐ（同じ人・短時間だけ無視）
+        if (rc == lastHitBy && Time.time - lastHitTime < hitImmunityTime)
+        {
+            return;
+        }
+        rc.ApplyBallImpact(collision.relativeVelocity);
     }
 
     /// カップインしたときに呼ぶ。速度を消してその場に固定し、以降は打てなくする。
