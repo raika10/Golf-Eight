@@ -14,6 +14,12 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/FishNet/Demos/Prediction/Rigidbody/Rigidbody Prediction Demo.unity
     guid: 0b7f6237292ee8a4eabe7f955f4a4de5
+  - enabled: 1
+    path: Assets/Scenes/TestRoomScene.unity
+    guid: dd3edcc8bcafa44878a749b18c8d90ff
+  - enabled: 1
+    path: Assets/Scenes/TestNetworkScene.unity
+    guid: ae0007169f4764799a4664439f962dd4
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   m_UseUCBPForAssetBundles: 0
