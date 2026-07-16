@@ -28,6 +28,11 @@ public class GolfBall : MonoBehaviour
     [Header("プレイヤーへの衝突")]
     [SerializeField] private float hitImmunityTime = 0.2f; // 打った直後、自分の体に当たって誤爆しないための猶予 (s)
 
+    [Header("壁の破壊")]
+    [SerializeField] private bool breakWalls = true;         // 当たった壁（MazeWall）を壊すか
+    [SerializeField] private float wallBreakMinSpeed = 3f;    // この相対速度以上で当たった時だけ壊す (m/s)。ゆっくり転がる球では壊れない
+    [SerializeField] private int wallDamage = 1;              // 1回の衝突で壁に与えるダメージ
+
     private Rigidbody body;
     private SphereCollider sphere;
     private float slowTimer; // 遅い状態が続いている時間
@@ -147,6 +152,18 @@ public class GolfBall : MonoBehaviour
     /// 遅いボールで誤って吹っ飛ぶこともない（速度がその瞬間の実測値だから）。
     private void OnCollisionEnter(Collision collision)
     {
+        // 壁（MazeWall）に当たったら壊す。速い当たりだけ壊れるよう相対速度でしきい値判定し、
+        // 衝突点と進行方向（-relativeVelocity）を渡して破片が球の進む向きへ飛ぶようにする。
+        if (breakWalls)
+        {
+            MazeWall wall = collision.collider.GetComponentInParent<MazeWall>();
+            if (wall != null && collision.relativeVelocity.magnitude >= wallBreakMinSpeed)
+            {
+                ContactPoint contact = collision.GetContact(0);
+                wall.TakeDamage(wallDamage, contact.point, -collision.relativeVelocity);
+            }
+        }
+
         RagdollController rc = collision.collider.GetComponentInParent<RagdollController>();
         if (rc == null)
         {

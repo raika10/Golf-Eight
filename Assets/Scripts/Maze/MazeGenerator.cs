@@ -28,6 +28,10 @@ public class MazeGenerator : MonoBehaviour
     [Tooltip("ゴール地点に置くマーカー。ポール（旗竿）を想定")]
     public GameObject goalPrefab;
 
+    [Header("スタート地点の広場")]
+    [Tooltip("スタートのマスを中心に、この半径（マス）ぶんだけ内部の壁を取り除いて広場にする。\nプレイヤーが動き回れる・ボールを構えられるようにするため。0で無効")]
+    public int startClearRadius = 1;
+
     [Header("乱数シード")]
     public bool useRandomSeed = true;
     public int seed;
@@ -72,6 +76,7 @@ public class MazeGenerator : MonoBehaviour
         InitWalls();
         CarvePassagesDFS();
         DetermineStartAndGoal();
+        ClearStartArea();
         SpawnBlocks();
 
         Debug.Log($"[MazeGenerator] 迷路生成完了 (seed={seed}, {width}x{height}, " +
@@ -155,6 +160,34 @@ public class MazeGenerator : MonoBehaviour
     {
         StartCell = new Vector2Int(0, 0);        // DFSの起点をスタートにする
         GoalCell = FindFarthestCell(StartCell);  // そこから最も遠いマスをゴールに
+    }
+
+    /// <summary>
+    /// スタートのマス周辺の「内部の壁」を取り除いて、プレイヤーが動ける広場にする。
+    /// 迷路の一番外側（外周）の壁は残すので、広場から場外へ抜けてしまうことはない。
+    /// ゴール決定（FindFarthestCell）の後に呼ぶこと。広場化で通路にループができても
+    /// ゴールの位置は変わらない（先に確定させておく）。
+    /// </summary>
+    void ClearStartArea()
+    {
+        if (startClearRadius <= 0) return;
+
+        int minX = Mathf.Max(0, StartCell.x - startClearRadius);
+        int maxX = Mathf.Min(width - 1, StartCell.x + startClearRadius);
+        int minY = Mathf.Max(0, StartCell.y - startClearRadius);
+        int maxY = Mathf.Min(height - 1, StartCell.y + startClearRadius);
+
+        // 水平壁 hWalls[y, x] は 行 y-1 と 行 y の境界。
+        // 両側のマスが広場内に収まる内部境界（y = minY+1 .. maxY）だけを消す＝外周は残る。
+        for (int y = minY + 1; y <= maxY; y++)
+            for (int x = minX; x <= maxX; x++)
+                hWalls[y, x] = false;
+
+        // 垂直壁 vWalls[y, x] は 列 x-1 と 列 x の境界。
+        // 同様に内部境界（x = minX+1 .. maxX）だけを消す。
+        for (int y = minY; y <= maxY; y++)
+            for (int x = minX + 1; x <= maxX; x++)
+                vWalls[y, x] = false;
     }
 
     // 通路をたどってBFSし、fromから最も遠いマスを返す

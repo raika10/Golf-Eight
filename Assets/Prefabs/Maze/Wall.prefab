@@ -127,7 +127,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::MazeWall
   hp: 1
   shatterOnDestroy: 1
-  fragmentCounts: {x: 3, y: 2, z: 1}
+  fragmentSize: 1
   explosionForce: 100
   explosionRadius: 3
   fragmentLifetime: 3

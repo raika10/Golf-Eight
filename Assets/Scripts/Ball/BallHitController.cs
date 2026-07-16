@@ -46,6 +46,14 @@ public class BallHitController : MonoBehaviour
     [SerializeField] private float playerPredictRadius = 0.3f; // 予測線で相手の体を見立てる半径 (m)
     [SerializeField] private float playerAimHeight = 1.0f;     // 予測線の開始高さ（相手の胸あたり m）
 
+    [Header("スイングで壁を壊す")]
+    [SerializeField] private bool breakWallsOnSwing = true;   // スイングの当たる瞬間、前方の壁（MazeWall）を壊す
+    [SerializeField] private float wallSwingRange = 2.5f;     // 壁を壊せる前方の距離 (m)
+    [SerializeField] private float wallSwingHeight = 1.0f;    // 判定を出す高さ（胸あたり m）
+    [SerializeField] private int wallSwingDamage = 1;         // スイングで壁に与えるダメージ
+    [SerializeField] private float wallSwingImpact = 8f;      // 破片を飛ばす擬似的な衝撃の強さ
+    [SerializeField] private LayerMask wallSwingMask = ~0;    // 壁探索の対象レイヤー
+
     [Header("対象さがし")]
     [SerializeField] private float hitRange = 5f;         // この距離内のボールを打てる
     [SerializeField] private LayerMask hittableBallMask = ~0; // ボール探索の対象レイヤー
@@ -250,6 +258,12 @@ public class BallHitController : MonoBehaviour
                 rig.Swing();
             }
 
+            // スイングの当たる瞬間に、前方の壁を壊す（対象がボール／相手／空振りのどれでも共通）。
+            if (breakWallsOnSwing)
+            {
+                StartCoroutine(BreakWallsAfterSwing(GetAimDirection()));
+            }
+
             // 離した瞬間に対象を判定：居れば当てる、居なければ空振り（よろけ＋後隙）
             if (targetPlayer != null)
             {
@@ -427,6 +441,62 @@ public class BallHitController : MonoBehaviour
         if (ball != null && !ball.IsHoled)
         {
             ball.Hit(direction, power, selfRagdoll);
+        }
+    }
+
+    /// スイングの当たる瞬間（swingHitDelay秒後）に、前方の壁（MazeWall）を壊す。
+    /// クラブには当たり判定が無いので、プレイヤーの前方・クラブが届く範囲を調べて、
+    /// 一番手前にある壁を1枚壊す。破片は狙いの水平方向へ飛ばす。
+    private IEnumerator BreakWallsAfterSwing(Vector3 aimDir)
+    {
+        if (swingHitDelay > 0f)
+        {
+            yield return new WaitForSeconds(swingHitDelay);
+        }
+
+        Vector3 flat = aimDir;
+        flat.y = 0f;
+        if (flat.sqrMagnitude < 1e-4f)
+        {
+            yield break;
+        }
+        flat.Normalize();
+
+        // 前方 wallSwingRange の中央あたりを中心に、その半径ぶんの球で壁を探す。
+        Vector3 origin = transform.position + Vector3.up * wallSwingHeight;
+        Vector3 center = origin + flat * (wallSwingRange * 0.5f);
+        int count = Physics.OverlapSphereNonAlloc(center, wallSwingRange * 0.5f, overlapBuffer, wallSwingMask, QueryTriggerInteraction.Ignore);
+
+        MazeWall nearest = null;
+        float nearestSqr = float.MaxValue;
+        for (int i = 0; i < count; i++)
+        {
+            MazeWall wall = overlapBuffer[i].GetComponentInParent<MazeWall>();
+            if (wall == null)
+            {
+                continue;
+            }
+
+            // 前方にある壁だけを対象にする（背後の壁は無視）。
+            Vector3 to = wall.transform.position - transform.position;
+            to.y = 0f;
+            if (Vector3.Dot(to, flat) <= 0f)
+            {
+                continue;
+            }
+
+            float sqr = to.sqrMagnitude;
+            if (sqr < nearestSqr)
+            {
+                nearestSqr = sqr;
+                nearest = wall;
+            }
+        }
+
+        if (nearest != null)
+        {
+            // 破片が狙いの向きへ飛ぶよう、衝撃点は壁の中心・速度は前方向で渡す。
+            nearest.TakeDamage(wallSwingDamage, nearest.transform.position, flat * wallSwingImpact);
         }
     }
 
