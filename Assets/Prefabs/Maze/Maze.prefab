@@ -52,5 +52,6 @@ MonoBehaviour:
   wallPrefab: {fileID: 2382470830768573821, guid: 40d01502eccb94e7eb03da0975161393, type: 3}
   floorPrefab: {fileID: 873845854397452120, guid: cb6d61cb8389b4b2b9df8838054203a4, type: 3}
   pillarPrefab: {fileID: 6349988464136009429, guid: 62c0e77e0eb3d4dfa88c23d76bf4d49b, type: 3}
+  startFloorMaterial: {fileID: 2100000, guid: 47d788e89d144070a4abb7ba42abb673, type: 2}
   useRandomSeed: 1
   seed: 0
