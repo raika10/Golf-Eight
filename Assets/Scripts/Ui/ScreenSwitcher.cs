@@ -5,10 +5,10 @@ public class ScreenSwitcher : MonoBehaviour
     public GameObject titlePanel;
     public GameObject roomPanel;
     public GameObject lobbyPanel;
+    public GameObject joinPanel;
 
     void Start()
     {
-        // 最初はタイトル画面だけ表示
         ShowTitle();
     }
 
@@ -17,6 +17,7 @@ public class ScreenSwitcher : MonoBehaviour
         titlePanel.SetActive(true);
         roomPanel.SetActive(false);
         lobbyPanel.SetActive(false);
+        joinPanel.SetActive(false);
     }
 
     public void ShowRoom()
@@ -24,6 +25,7 @@ public class ScreenSwitcher : MonoBehaviour
         titlePanel.SetActive(false);
         roomPanel.SetActive(true);
         lobbyPanel.SetActive(false);
+        joinPanel.SetActive(false);
     }
 
     public void ShowLobby()
@@ -31,6 +33,23 @@ public class ScreenSwitcher : MonoBehaviour
         titlePanel.SetActive(false);
         roomPanel.SetActive(false);
         lobbyPanel.SetActive(true);
+        joinPanel.SetActive(false);
+    }
+
+    public void ShowJoin()
+    {
+        titlePanel.SetActive(false);
+        roomPanel.SetActive(false);
+        joinPanel.SetActive(true);
+        lobbyPanel.SetActive(false);
+    }
+
+    public void ShowRoomFromJoin()
+    {
+        titlePanel.SetActive(false);
+        roomPanel.SetActive(true);
+        joinPanel.SetActive(false);
+        lobbyPanel.SetActive(false);
     }
 
     public void ShowRoomFromLobby()
@@ -38,6 +57,7 @@ public class ScreenSwitcher : MonoBehaviour
         titlePanel.SetActive(false);
         roomPanel.SetActive(true);
         lobbyPanel.SetActive(false);
+        joinPanel.SetActive(false);
     }
 
     public void QuitGame()
