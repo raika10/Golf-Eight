@@ -446,7 +446,8 @@ public class BallHitController : MonoBehaviour
 
     /// スイングの当たる瞬間（swingHitDelay秒後）に、前方の壁（MazeWall）を壊す。
     /// クラブには当たり判定が無いので、プレイヤーの前方・クラブが届く範囲を調べて、
-    /// 一番手前にある壁を1枚壊す。破片は狙いの水平方向へ飛ばす。
+    /// 一番手前にある壁を1枚壊す。衝撃点は「壁面のうちプレイヤーに一番近い点（＝正面）」に
+    /// するので、当たった箇所だけが崩れる。破片は狙いの水平方向へ飛ばす。
     private IEnumerator BreakWallsAfterSwing(Vector3 aimDir)
     {
         if (swingHitDelay > 0f)
@@ -468,6 +469,7 @@ public class BallHitController : MonoBehaviour
         int count = Physics.OverlapSphereNonAlloc(center, wallSwingRange * 0.5f, overlapBuffer, wallSwingMask, QueryTriggerInteraction.Ignore);
 
         MazeWall nearest = null;
+        Collider nearestCol = null;
         float nearestSqr = float.MaxValue;
         for (int i = 0; i < count; i++)
         {
@@ -490,13 +492,16 @@ public class BallHitController : MonoBehaviour
             {
                 nearestSqr = sqr;
                 nearest = wall;
+                nearestCol = overlapBuffer[i];
             }
         }
 
         if (nearest != null)
         {
-            // 破片が狙いの向きへ飛ぶよう、衝撃点は壁の中心・速度は前方向で渡す。
-            nearest.TakeDamage(wallSwingDamage, nearest.transform.position, flat * wallSwingImpact);
+            // 衝撃点＝壁面のうちプレイヤーの胸に一番近い点（正面）。当たった箇所だけが崩れる。
+            // OverlapSphere が返すのは有効なコライダーなので、ボクセル化後の壁でも正しく点が取れる。
+            Vector3 impactPoint = nearestCol != null ? nearestCol.ClosestPoint(origin) : nearest.transform.position;
+            nearest.TakeDamage(wallSwingDamage, impactPoint, flat * wallSwingImpact);
         }
     }
 
