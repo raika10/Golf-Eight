@@ -1,6 +1,6 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
---- !u!1 &7377147071617477590
+--- !u!1 &8019682184774250016
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -8,50 +8,53 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 4009940473366773250}
-  - component: {fileID: 890655050157189194}
+  - component: {fileID: 4100347104687019883}
+  - component: {fileID: 2648573739986217758}
   m_Layer: 0
-  m_Name: Maze
+  m_Name: Maze New
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &4009940473366773250
+--- !u!4 &4100347104687019883
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7377147071617477590}
+  m_GameObject: {fileID: 8019682184774250016}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: 13.23872, y: -0, z: -6.94705}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &890655050157189194
+--- !u!114 &2648573739986217758
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7377147071617477590}
+  m_GameObject: {fileID: 8019682184774250016}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5cf5896e0643d4942b7a70e8b78438e7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::MazeGenerator
-  width: 25
-  height: 50
-  cellSize: 10
+  width: 20
+  height: 40
+  cellSize: 15
   wallHeight: 5
   wallThickness: 0.1
   wallPrefab: {fileID: 2382470830768573821, guid: 40d01502eccb94e7eb03da0975161393, type: 3}
   floorPrefab: {fileID: 873845854397452120, guid: cb6d61cb8389b4b2b9df8838054203a4, type: 3}
   pillarPrefab: {fileID: 6349988464136009429, guid: 62c0e77e0eb3d4dfa88c23d76bf4d49b, type: 3}
+  startPrefab: {fileID: 7405846476849542632, guid: c6308cb7062fac34e8e50600086b12a1, type: 3}
+  goalPrefab: {fileID: 2700234515250957537, guid: c7ad8c244ae6ebe4d84315c24a6ebcfc, type: 3}
+  startClearRadius: 1
   startFloorMaterial: {fileID: 2100000, guid: 47d788e89d144070a4abb7ba42abb673, type: 2}
   useRandomSeed: 1
   seed: 0

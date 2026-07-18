@@ -28,6 +28,12 @@ public class MazeGenerator : MonoBehaviour
     [Tooltip("ゴール地点に置くマーカー。ポール（旗竿）を想定")]
     public GameObject goalPrefab;
 
+    [Header("スタート地点の広場")]
+    [Tooltip("スタートのマスを中心に、この半径（マス）ぶんだけ内部の壁と柱を取り除いて広場にする。\nプレイヤーが動き回れる・ボールを構えられるようにするため。0で無効")]
+    public int startClearRadius = 1;
+    [Tooltip("広場の床タイルに差し替えるマテリアル（芝生）。未設定なら床はそのまま")]
+    public Material startFloorMaterial;
+
     [Header("乱数シード")]
     public bool useRandomSeed = true;
     public int seed;
@@ -72,6 +78,7 @@ public class MazeGenerator : MonoBehaviour
         InitWalls();
         CarvePassagesDFS();
         DetermineStartAndGoal();
+        ClearStartArea();
         SpawnBlocks();
 
         Debug.Log($"[MazeGenerator] 迷路生成完了 (seed={seed}, {width}x{height}, " +
@@ -157,6 +164,51 @@ public class MazeGenerator : MonoBehaviour
         GoalCell = FindFarthestCell(StartCell);  // そこから最も遠いマスをゴールに
     }
 
+    /// <summary>広場のマス範囲（minX..maxX, minY..maxY はいずれも両端を含む）。</summary>
+    struct CellRange
+    {
+        public int minX, maxX, minY, maxY;
+        public bool Contains(int x, int y) => x >= minX && x <= maxX && y >= minY && y <= maxY;
+    }
+
+    /// <summary>広場に含まれるマスの範囲。startClearRadius が0ならスタートのマスだけになる。</summary>
+    CellRange StartAreaCells()
+    {
+        int r = Mathf.Max(0, startClearRadius);
+        return new CellRange
+        {
+            minX = Mathf.Max(0, StartCell.x - r),
+            maxX = Mathf.Min(width - 1, StartCell.x + r),
+            minY = Mathf.Max(0, StartCell.y - r),
+            maxY = Mathf.Min(height - 1, StartCell.y + r),
+        };
+    }
+
+    /// <summary>
+    /// スタートのマス周辺の「内部の壁」を取り除いて、プレイヤーが動ける広場にする。
+    /// 迷路の一番外側（外周）の壁は残すので、広場から場外へ抜けてしまうことはない。
+    /// ゴール決定（FindFarthestCell）の後に呼ぶこと。広場化で通路にループができても
+    /// ゴールの位置は変わらない（先に確定させておく）。
+    /// </summary>
+    void ClearStartArea()
+    {
+        if (startClearRadius <= 0) return;
+
+        var area = StartAreaCells();
+
+        // 水平壁 hWalls[y, x] は 行 y-1 と 行 y の境界。
+        // 両側のマスが広場内に収まる内部境界（y = minY+1 .. maxY）だけを消す＝外周は残る。
+        for (int y = area.minY + 1; y <= area.maxY; y++)
+            for (int x = area.minX; x <= area.maxX; x++)
+                hWalls[y, x] = false;
+
+        // 垂直壁 vWalls[y, x] は 列 x-1 と 列 x の境界。
+        // 同様に内部境界（x = minX+1 .. maxX）だけを消す。
+        for (int y = area.minY; y <= area.maxY; y++)
+            for (int x = area.minX + 1; x <= area.maxX; x++)
+                vWalls[y, x] = false;
+    }
+
     // 通路をたどってBFSし、fromから最も遠いマスを返す
     Vector2Int FindFarthestCell(Vector2Int from)
     {
@@ -203,18 +255,24 @@ public class MazeGenerator : MonoBehaviour
     {
         float half = cellSize * 0.5f;
         float halfH = wallHeight * 0.5f;
+        var startArea = StartAreaCells();
 
-        // 床タイル
+        // 床タイル（広場のぶんは芝生マテリアルに差し替える）
         if (floorPrefab != null)
         {
             for (int y = 0; y < height; y++)
                 for (int x = 0; x < width; x++)
-                    SpawnBlock(
+                {
+                    var go = SpawnBlock(
                         floorPrefab,
                         new Vector3(x * cellSize + half, 0f, y * cellSize + half),
                         new Vector3(cellSize, 0.1f, cellSize),
                         $"Floor_{x}_{y}",
                         isWall: false);
+
+                    if (startFloorMaterial != null && startArea.Contains(x, y))
+                        ApplyMaterial(go, startFloorMaterial);
+                }
         }
 
         // 水平壁（東西方向に伸びる、Z境界に配置）
@@ -252,12 +310,20 @@ public class MazeGenerator : MonoBehaviour
         {
             for (int y = 0; y <= height; y++)
                 for (int x = 0; x <= width; x++)
+                {
+                    // 柱(x, y)は4マスの交点。広場の内部の交点は、壁と同じく柱も立てない
+                    // （壁だけ消しても柱が残ると広場に障害物が点在してしまうため）。
+                    bool insideStartArea = x > startArea.minX && x <= startArea.maxX
+                                        && y > startArea.minY && y <= startArea.maxY;
+                    if (insideStartArea) continue;
+
                     SpawnBlock(
                         pillarPrefab,
                         new Vector3(x * cellSize, halfH, y * cellSize),
                         new Vector3(wallThickness, wallHeight, wallThickness),
                         $"Pillar_{x}_{y}",
                         isWall: false);
+                }
         }
 
         // スタート/ゴールのマーカー（ゴールにはポールを立てる想定）
@@ -282,9 +348,9 @@ public class MazeGenerator : MonoBehaviour
             new Vector3(cell.x * cellSize + half, 0.05f, cell.y * cellSize + half));
     }
 
-    void SpawnBlock(GameObject prefab, Vector3 localPos, Vector3 scale, string blockName, bool isWall)
+    GameObject SpawnBlock(GameObject prefab, Vector3 localPos, Vector3 scale, string blockName, bool isWall)
     {
-        if (prefab == null) return;
+        if (prefab == null) return null;
 
         var worldPos = transform.TransformPoint(localPos);
         var go = Instantiate(prefab, worldPos, Quaternion.identity, container);
@@ -293,5 +359,15 @@ public class MazeGenerator : MonoBehaviour
 
         if (isWall && go.GetComponent<MazeWall>() == null)
             go.AddComponent<MazeWall>();
+
+        return go;
+    }
+
+    /// <summary>生成したブロックのマテリアルを差し替える（Prefabのマテリアル自体は変更しない）。</summary>
+    static void ApplyMaterial(GameObject go, Material material)
+    {
+        if (go == null) return;
+        foreach (var renderer in go.GetComponentsInChildren<Renderer>())
+            renderer.sharedMaterial = material;
     }
 }
