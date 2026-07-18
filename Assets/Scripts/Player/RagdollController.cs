@@ -39,6 +39,7 @@ public class RagdollController : MonoBehaviour
     private BallHitController hitController;
     private Rigidbody[] bones;         // ragdoll の骨
     private Collider[] boneColliders;  // ragdoll 中だけ有効化する当たり判定
+    private Collider[] bodyColliders;  // 骨以外の自分のコライダー（移動用カプセル・CharacterController）
     private Transform hipsBone;        // いちばん根元の骨（復帰時に位置合わせ）
     private Rigidbody hipsBody;        // 腰のRigidbody（KnockbackReceiverが軌道を矯正するのに使う）
     private bool isRagdoll;
@@ -88,16 +89,39 @@ public class RagdollController : MonoBehaviour
         }
         bones = boneList.ToArray();
         boneColliders = new Collider[bones.Length];
+        // 骨のコライダーに「跳ねない・摩擦あり」の物理マテリアルを付ける。
+        // これで着地時に地面で跳ね返って前後にバウンドせず、摩擦で前へ転がって止まる。
+        PhysicsMaterial ragMat = new PhysicsMaterial("RagdollNoBounce")
+        {
+            bounciness = 0f,
+            bounceCombine = PhysicsMaterialCombine.Minimum, // どちらか跳ねなければ跳ねない
+            dynamicFriction = 0.7f,
+            staticFriction = 0.7f,
+            frictionCombine = PhysicsMaterialCombine.Average,
+        };
         for (int i = 0; i < bones.Length; i++)
         {
             boneColliders[i] = bones[i].GetComponent<Collider>();
+            if (boneColliders[i] != null)
+            {
+                boneColliders[i].sharedMaterial = ragMat;
+            }
+            // 着地後に地面を滑って壁へ速く当たった時、ボールと同じように壁を壊せるようにする
+            if (bones[i].GetComponent<RagdollBoneWallBreaker>() == null)
+            {
+                bones[i].gameObject.AddComponent<RagdollBoneWallBreaker>();
+            }
         }
         // 骨の中で最上位（親を辿って最初に見つかるRigidbody）を hips とみなす
         hipsBone = FindRootBone();
         hipsBody = hipsBone != null ? hipsBone.GetComponent<Rigidbody>() : null;
 
-        // 骨同士の当たり判定を切る（手足がぶつかり合って暴れる／横へ滑るのを防ぐ）
-        IgnoreSelfCollisions();
+        // 骨以外の自分のコライダー（移動用のカプセル・CharacterController）を集める。
+        // これらは倒れている間も骨を包んだまま残るので、骨と衝突させてはいけない。
+        bodyColliders = CollectBodyColliders();
+
+        // 骨同士／骨と本体カプセルの当たり判定を切る
+        ApplyCollisionIgnores();
 
         // ragdollで骨が大きく動くと、メッシュの表示範囲の計算が狂って
         // 「画面内なのに描画されない（透明に見える）」ことがあるので、常に再計算させる
@@ -111,16 +135,56 @@ public class RagdollController : MonoBehaviour
         SetBonesPhysics(false);
     }
 
-    /// ragdoll の骨同士の衝突を全ペア無効化する。これがないと手足が押し合って軌道が乱れる。
-    private void IgnoreSelfCollisions()
+    /// 骨以外の「自分のコライダー」を集める。移動用のカプセル（CapsuleCollider）や
+    /// CharacterController が該当する。CharacterController も Collider の一種なので一緒に取れる。
+    private Collider[] CollectBodyColliders()
+    {
+        var result = new System.Collections.Generic.List<Collider>();
+        foreach (Collider c in GetComponentsInChildren<Collider>())
+        {
+            if (System.Array.IndexOf(boneColliders, c) < 0)
+            {
+                result.Add(c); // 骨に属さない＝本体側のコライダー
+            }
+        }
+        return result.ToArray();
+    }
+
+    /// 当たり判定の「無視」設定をまとめて入れる。
+    ///
+    /// ① 骨どうし：これがないと手足が押し合って暴れる／横へ滑る。
+    ///
+    /// ② 骨と本体カプセル：★これが無いと弱く打たれた時に床を突き抜ける★
+    ///    移動用カプセルや CharacterController は、飛んでいる間もその場に残り続ける（飛ぶのは骨だけで、
+    ///    本体の transform は動かないため）。飛行中は骨の当たり判定がOFFなので問題は表に出ないが、
+    ///    着地で当たり判定を戻した瞬間に「骨がカプセルの中に深くめり込んでいる」状態になり、
+    ///    PhysXがそれを解消しようと骨を高速で弾き飛ばす。床は薄いので簡単に突き抜けて落ちていく。
+    ///    強く打った時は体がカプセルの外まで飛ぶので起きず、弱く打った時ほど確実に起きる。
+    ///
+    /// Unity の IgnoreCollision はコライダーを無効化すると失われるので、有効化するたびに呼び直すこと。
+    private void ApplyCollisionIgnores()
     {
         for (int i = 0; i < boneColliders.Length; i++)
         {
+            if (boneColliders[i] == null)
+            {
+                continue;
+            }
             for (int j = i + 1; j < boneColliders.Length; j++)
             {
-                if (boneColliders[i] != null && boneColliders[j] != null)
+                if (boneColliders[j] != null)
                 {
                     Physics.IgnoreCollision(boneColliders[i], boneColliders[j], true);
+                }
+            }
+            foreach (Collider body in bodyColliders)
+            {
+                // 無効なコライダーに IgnoreCollision を呼ぶとUnityがエラーを出すので飛ばす。
+                // 本体のCharacterControllerは倒れている間 無効なのでここに来るが、
+                // 無効な以上ぶつからないので無視設定も要らない（Character側の重複CCは有効なまま＝ここで効く）。
+                if (body != null && body.enabled && body.gameObject.activeInHierarchy)
+                {
+                    Physics.IgnoreCollision(boneColliders[i], body, true);
                 }
             }
         }
@@ -355,6 +419,10 @@ public class RagdollController : MonoBehaviour
                 boneColliders[i].enabled = physics; // 骨の当たり判定は物理中だけ（普段は CharacterController）
             }
         }
+        if (physics)
+        {
+            ApplyCollisionIgnores(); // 有効化で無視設定が失われるので入れ直す
+        }
     }
 
     /// 全骨に同じ速度を与え直す（飛行の初速を関節スナップに食われた後、もう一度与えるのに使う）。
@@ -406,6 +474,12 @@ public class RagdollController : MonoBehaviour
             {
                 c.enabled = enabled;
             }
+        }
+        if (enabled)
+        {
+            // ★着地の瞬間はここを通る★ 無視設定は無効化で失われているので、必ず入れ直してから
+            // 物理に戻す。これを忘れると、骨が本体カプセルにめり込んだ状態で弾き飛ばされる。
+            ApplyCollisionIgnores();
         }
     }
 

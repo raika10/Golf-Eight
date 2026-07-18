@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Events;
 
@@ -27,6 +28,10 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
     [SerializeField] private LayerMask wallMask = ~0;    // 壁とみなす対象レイヤー（自分の骨は自動で無視）
     [SerializeField] private float wallBounciness = 0.6f; // 壁で反射した時に残る勢いの割合（1=減らない, 0.6=ボール風）
     [SerializeField] private float minBounceSpeed = 1.5f; // 反射後この速さ未満なら跳ねずに着地 (m/s)
+    [SerializeField] private bool breakWalls = true;      // 当たった壁（MazeWall）を壊すか（ボールと同じ）
+    [SerializeField] private float wallBreakMinSpeed = 3f;// この速さ以上で当たった時だけ壁を壊す (m/s)
+    [SerializeField] private int wallDamage = 1;          // 1回の衝突で壁に与えるダメージ
+    [SerializeField] private float wallPassSlowdown = 0.85f; // 壁を貫通した時に残るスピードの割合（0.85=15%減速）
 
     [Header("ぐにゃぐにゃ具合")]
     [Tooltip("飛行中の手足のバタつき。大きいほどぐにゃぐにゃ回る（重心の軌道＝予測線は変わらない）")]
@@ -35,6 +40,14 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
     [Header("着地後")]
     [SerializeField] private float stunTime = 1.0f;      // 着地してから起き上がるまで (s)
     [SerializeField] private float graceTime = 0.5f;     // 起き上がった後の無敵時間 (s)
+
+    [Header("地面クランプ（すり抜け対策）")]
+    [Tooltip("地面判定レイをこの高さから真下へ撃つ (m)。薄い床でも撃ち損ねないよう体より十分高くする")]
+    [SerializeField] private float groundRayHeight = 50f;
+    [Tooltip("足（一番低い骨）を地面からこれだけ浮かせる余裕 (m)")]
+    [SerializeField] private float boneGroundMargin = 0.05f;
+    [Tooltip("腰〜足の想定距離の上限 (m)。骨が1本だけ飛んでも腰が跳ね上がらないための頭打ち")]
+    [SerializeField] private float maxBodyDrop = 1.3f;
 
     [Header("場外リスポーン")]
     [SerializeField] private float minY = -20f;          // これより下に落ちたらリスポーン
@@ -50,6 +63,7 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
     private Coroutine flightRoutine;
     private static readonly RaycastHit[] groundHits = new RaycastHit[8];
     private static readonly RaycastHit[] wallHits = new RaycastHit[8];
+    private readonly HashSet<MazeWall> hitWalls = new HashSet<MazeWall>(); // この飛行で既に壊した壁（多重ダメージ防止）
 
     /// いま吹っ飛ばされてダウン中か。
     public bool IsKnockedDown => ragdoll != null && ragdoll.IsDown;
@@ -160,15 +174,20 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
             ragdoll.AddRandomSpin(floppiness);
         }
 
-        Vector3 startPos = hips.position; // 放物線の起点（壁で反射するたびにここを更新する）
-        Vector3 vel = v0;                 // 現在の速度（壁で反射するたびに変わる）
+        Vector3 startPos = hips.position; // 放物線の起点
+        Vector3 vel = v0;                 // 現在の速度
+        hitWalls.Clear();                 // この飛行で壊した壁の記録をリセット
 
-        // 発射時の「腰〜地面の隙間」を測っておく。飛行中はこの高さより腰を下げない＝足がめり込まない。
-        // これが無いと、弱い力で打った時に腰がほとんど上がらず、放物線が下がって足が地面をすり抜ける。
+        // 飛行中はこの高さ（clearance）より腰を下げない＝足が地面にめり込まない。
+        // ★重要★ clearance は「腰〜地面」ではなく「腰〜一番低い骨（足）」で測る。
+        //   モデルが Character(-0.8) で沈められていて腰が地面より下から始まることがあり、
+        //   「腰〜地面」だと負の値＝ほぼ0になって、足が床の下へ突き抜けたまま飛んでしまう。
+        //   骨どうしの差＝脚の長さは、モデルの沈み具合に関係なく正しく測れる。
         float clearance = 0.9f;
-        if (TryGetGroundY(startPos, out float startGroundY))
+        float lowestAtStart = LowestBoneY();
+        if (!float.IsNaN(lowestAtStart))
         {
-            clearance = Mathf.Max(0.2f, startPos.y - startGroundY);
+            clearance = Mathf.Clamp(startPos.y - lowestAtStart, 0.2f, maxBodyDrop);
         }
 
         // 腰をキネマティック化し、補間はオフにする。
@@ -195,18 +214,24 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
             Vector3 curr = hips.transform.position;
             Vector3 delta = pos - curr;
             float moveDist = delta.magnitude;
-            if (moveDist > 1e-4f && TryWallHit(curr, delta / moveDist, moveDist, out Vector3 wallStop, out Vector3 wallNormal))
+            // 壁チェック：壁は「反射せず貫通」する。ぶつかった壁は（速ければ）ボールのように壊す。
+            //（飛行中は骨の当たり判定がOFFなので、そのまま突き抜けて飛び続ける。）
+            if (breakWalls && moveDist > 1e-4f && TryWallHit(curr, delta / moveDist, moveDist, out _, out _, out Collider wallCol, out Vector3 wallHitPoint))
             {
-                Vector3 vHit = vel + Physics.gravity * t;                 // 衝突した瞬間の速度
-                vel = Vector3.Reflect(vHit, wallNormal) * wallBounciness; // 壁の法線で反射（勢いは倍率だけ残す）
-                startPos = wallStop;                                     // 壁の手前を新しい起点に
-                hips.transform.position = wallStop;
-                t = 0f;                                                  // 反射地点から新しい放物線を始める
-                if (vel.magnitude < minBounceSpeed)
+                Vector3 vHit = vel + Physics.gravity * t; // 衝突した瞬間の速度
+                if (wallCol != null && vHit.magnitude >= wallBreakMinSpeed)
                 {
-                    break; // 反射後の勢いが弱ければ、跳ねずにその場で着地
+                    MazeWall wall = wallCol.GetComponentInParent<MazeWall>();
+                    if (wall != null && hitWalls.Add(wall)) // まだ壊していない壁だけ（多重ダメージ防止）
+                    {
+                        wall.TakeDamage(wallDamage, wallHitPoint, vHit);
+                        // 貫通したので少し減速する。現在地点から遅くなった速度で放物線を引き直す。
+                        startPos = hips.transform.position;
+                        vel = vHit * wallPassSlowdown;
+                        t = 0f;
+                    }
                 }
-                continue;
+                // 反射も停止もしない → そのまま放物線を貫通して飛び続ける
             }
 
             // 腰を地面の上（clearance）より下げない＝足がめり込まない。地面に達したかも判定する。
@@ -237,21 +262,101 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
         // 着地した瞬間の位置を記録する。この後スタンで倒れている間に他プレイヤーへ押されて
         // 位置がズレても、起き上がりは「本来着地した場所」を使う（StunThenRecover参照）。
         landedHipsPosition = hips.position;
-        Land();
+        // 着地した瞬間の速度（進行方向＋落下）。これを体に残して前へ転がす。
+        Land(vel + Physics.gravity * t);
     }
 
-    /// 着地：当たり判定を戻し、横滑りしないよう勢いを消して、その場で崩れる。stunTime 後に起き上がる。
-    private void Land()
+    /// 全骨のうち一番低い骨のワールドY。clearance（腰〜足の距離）を測るのに使う。
+    private float LowestBoneY()
     {
+        Rigidbody[] bones = ragdoll.Bones;
+        if (bones == null) return float.NaN;
+        float lowest = float.MaxValue;
+        foreach (Rigidbody b in bones)
+        {
+            if (b != null) lowest = Mathf.Min(lowest, b.position.y);
+        }
+        return lowest == float.MaxValue ? float.NaN : lowest;
+    }
+
+    /// 着地後の崩れ中、毎ステップ跳ね上がりを抑え、地面にめり込んだ骨を引き上げる。
+    /// ・上向きの速度に上限をかける → 地面で大きく跳ね返らない（前後バウンド防止）。
+    /// ・コライダーの底が地面より下なら、底が地面に来るまで持ち上げる → 膝下が埋まらない。
+    private void SuppressBounceAndSink()
+    {
+        Rigidbody[] bones = ragdoll.Bones;
+        if (bones == null) return;
+        foreach (Rigidbody b in bones)
+        {
+            if (b == null || b.isKinematic) continue;
+
+            // 跳ね上がり抑制：上向きの速度を完全に消す＝地面で跳ね返らない（前後バウンド防止）
+            Vector3 v = b.linearVelocity;
+            if (v.y > 0f) { v.y = 0f; b.linearVelocity = v; }
+            // 回転も毎ステップ減衰させて、体が前後に揺れ続けない
+            b.angularVelocity *= 0.6f;
+
+            // 埋まり防止：コライダーの底が地面より下なら、底が地面に来るまで持ち上げる
+            Collider col = b.GetComponent<Collider>();
+            if (col != null && col.enabled && TryGetGroundY(b.position, out float groundY))
+            {
+                float bottom = col.bounds.min.y;
+                if (bottom < groundY)
+                {
+                    Vector3 p = b.position;
+                    p.y += (groundY - bottom);
+                    b.position = p;
+                    Vector3 bv = b.linearVelocity;
+                    if (bv.y < 0f) { bv.y = 0f; b.linearVelocity = bv; } // 下向きの勢いは消して押し込まない
+                }
+            }
+        }
+    }
+
+    /// 着地の瞬間、地面より下に潜っている骨を地面の上へ引き上げる（保険）。
+    /// 当たり判定を戻す前に呼ぶこと。薄い床にめり込んだまま当たり判定を戻すと、
+    /// PhysXが床の裏側へ押し出して体がすり抜けて落ちる。先に地面の上へ出しておく。
+    private void LiftBonesAboveGround()
+    {
+        Rigidbody[] bones = ragdoll.Bones;
+        if (bones == null) return;
+        foreach (Rigidbody b in bones)
+        {
+            if (b == null) continue;
+            if (TryGetGroundY(b.position, out float groundY))
+            {
+                float minBoneY = groundY + boneGroundMargin;
+                if (b.position.y < minBoneY)
+                {
+                    Vector3 p = b.position;
+                    p.y = minBoneY;
+                    b.position = p;
+                }
+            }
+        }
+    }
+
+    /// 着地：当たり判定を戻し、進行方向の勢いを残して前へぐにゃぐにゃ転がる。stunTime 後に起き上がる。
+    /// 跳ね返り（前後バウンド）は骨コライダーの「跳ねない物理マテリアル」で抑え、摩擦でだんだん止まる。
+    private void Land(Vector3 landingVel)
+    {
+        LiftBonesAboveGround();                // 当たり判定を戻す前に、床にめり込んだ骨を地面の上へ出す
         ragdoll.SetBoneCollidersEnabled(true); // 着地：当たり判定を戻して地面の上で崩れる
+
+        // 水平の勢いだけ残して前へ転がす。上下方向は完全に消す＝地面に突き刺さって跳ね返らない。
+        Vector3 rollVel = landingVel;
+        rollVel.y = 0f;
+
         Rigidbody[] bones = ragdoll.Bones;
         if (bones != null)
         {
             foreach (Rigidbody b in bones)
             {
                 if (b == null || b.isKinematic) continue; // kinematic には速度を代入できない
-                b.linearDamping = 1.5f;                 // すぐ止まる（滑らない）
-                b.linearVelocity *= 0.1f;               // 勢いはほぼ残さない
+                b.linearDamping = 0.8f;    // 転がりながら少しずつ減速して止まる
+                b.angularDamping = 4f;     // 手足の回転をすぐ落ち着かせて、体が前後に揺れ続けないように
+                b.linearVelocity = rollVel; // 進行方向の水平の勢いだけ全身に与えて前へ転がす
+                b.angularVelocity *= 0.2f;  // 飛行中の回転(floppiness)を弱める＝着地でグラグラ跳ねない
             }
         }
         StartCoroutine(StunThenRecover());
@@ -259,7 +364,22 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
 
     private IEnumerator StunThenRecover()
     {
-        yield return new WaitForSeconds(stunTime);
+        // 着地後、しばらく物理で崩れさせつつ、毎ステップ「跳ね上がりを抑える＋地面に沈んだ骨を
+        // 引き上げる」を続ける。これで前後バウンドと膝下の埋まりを継続的に潰す。
+        float elapsed = 0f;
+        float settle = Mathf.Min(stunTime, 0.8f);
+        while (elapsed < settle)
+        {
+            yield return new WaitForFixedUpdate();
+            elapsed += Time.fixedDeltaTime;
+            SuppressBounceAndSink();
+        }
+
+        // 崩れ切ったら骨を固定して完全静止＝以降ピクリとも跳ねない・沈まない。
+        SuppressBounceAndSink();      // 固定直前にもう一度、地面の上へ確実に出しておく
+        ragdoll.FreezeBonesPose();
+
+        yield return new WaitForSeconds(Mathf.Max(0f, stunTime - elapsed));
         // 着地した瞬間の位置で復活する（スタン中に押されて体が動いていても、その影響を受けない）
         ragdoll.RecoverAtHips(landedHipsPosition);
         graceUntil = Time.time + graceTime;   // 起き上がり直後は無敵
@@ -279,10 +399,12 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
 
     /// from から dir 方向へ dist だけ進む間に壁があるか調べ、あれば止まるべき位置と壁の法線を返す。
     /// 自分の骨は無視。床/地面（法線が上向き）は壁として扱わない（地面クランプ側で処理するため）。
-    private bool TryWallHit(Vector3 from, Vector3 dir, float dist, out Vector3 stopPos, out Vector3 normal)
+    private bool TryWallHit(Vector3 from, Vector3 dir, float dist, out Vector3 stopPos, out Vector3 normal, out Collider wallCol, out Vector3 hitPoint)
     {
         stopPos = from;
         normal = Vector3.up;
+        wallCol = null;
+        hitPoint = from;
         int count = Physics.SphereCastNonAlloc(from, wallCheckRadius, dir, wallHits, dist, wallMask, QueryTriggerInteraction.Ignore);
         float best = float.MaxValue;
         bool found = false;
@@ -302,16 +424,26 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
                 best = h.distance;
                 stopPos = from + dir * Mathf.Max(0f, h.distance) + h.normal * wallCheckRadius; // 壁の手前
                 normal = h.normal;
+                wallCol = h.collider;
+                hitPoint = h.point;
                 found = true;
             }
         }
         return found;
     }
 
-    /// 指定位置の真下で一番近い地面の高さ(Y)を返す（自分の骨は無視）。飛行中は骨のコライダーOFFなので地面に当たる。
+    /// 指定位置の真下で一番近い地面の高さ(Y)を返す（自分の骨・壁は無視）。
+    ///
+    /// ★すり抜けの主因だった箇所★：以前は「体の少し上（from+0.5）」からレイを撃っていた。
+    /// モデルが沈んでいて体が床の高さ付近まで下がると、レイの始点が厚さ0.1mの薄い床の中／下に
+    /// 入ってしまい、床を撃ち損ねて「地面なし」＝自由落下していた。
+    /// そこで、必ず床より十分高い位置（groundRayHeight）から撃つ。始点が常に床の上にあるので
+    /// 撃ち損ねない。深く落ちてしまった体も、上から床を見つけて拾い上げられる（保険）。
     private bool TryGetGroundY(Vector3 from, out float groundY)
     {
-        int count = Physics.RaycastNonAlloc(from + Vector3.up * 0.5f, Vector3.down, groundHits, 40f, ~0, QueryTriggerInteraction.Ignore);
+        float originY = Mathf.Max(from.y + 0.5f, groundRayHeight); // 体が高く飛んでいてもその上から
+        Vector3 origin = new Vector3(from.x, originY, from.z);
+        int count = Physics.RaycastNonAlloc(origin, Vector3.down, groundHits, originY + 60f, ~0, QueryTriggerInteraction.Ignore);
         bool found = false;
         float bestDist = float.MaxValue;
         groundY = 0f;
@@ -321,6 +453,10 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
             if (col == null || col.transform.IsChildOf(transform))
             {
                 continue; // 自分の骨は無視
+            }
+            if (col.GetComponentInParent<MazeWall>() != null)
+            {
+                continue; // 壁の上面は「地面」ではない（上から撃つと壁の天面を拾ってしまうため除外）
             }
             if (groundHits[i].distance < bestDist)
             {
