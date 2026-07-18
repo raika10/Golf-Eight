@@ -57,7 +57,8 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
 
     private RagdollController ragdoll;
     private Rigidbody hips;
-    private Vector3 initialPosition;  // 開始位置（respawnPoint 未設定時のリスポーン先）
+    private Vector3 initialPosition;  // 開始位置＝スタート地点（自分の操作で落ちた時の戻り先）
+    private Vector3 knockOrigin;      // 飛ばされた場所（飛ばされて落ちた時の戻り先）
     private Vector3 landedHipsPosition; // 着地した瞬間の腰の位置（スタン中に押されても起き上がり位置をズレさせないため）
     private float graceUntil;         // この時刻まで無敵
     private Coroutine flightRoutine;
@@ -134,6 +135,9 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
         {
             return;
         }
+
+        // 飛ばされた場所を記録（この状態で場外へ落ちたら、ここに戻る）
+        knockOrigin = transform.position;
 
         // ragdoll化（操作無効＋ぐにゃぐにゃ）して全身に初速。以降の軌道は FlightRoutine が管理
         ragdoll.EnterRagdollWithVelocity(v0);
@@ -386,12 +390,24 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
     }
 
     /// 場外・水場用のリスポーン（フック）。RespawnZone や外部からも呼べる。
+    /// 飛ばされて（ragdoll中に）落ちたら「飛ばされた場所」、自分の操作で落ちたら「スタート地点」へ戻す。
     public void TriggerRespawn()
     {
         StopAllCoroutines();
         flightRoutine = null;
 
-        Vector3 pos = respawnPoint != null ? respawnPoint.position : initialPosition;
+        Vector3 pos;
+        if (IsKnockedDown)
+        {
+            // ragdoll中＝他プレイヤーに飛ばされて操作不能のまま場外へ → 飛ばされた場所に戻る
+            pos = knockOrigin;
+        }
+        else
+        {
+            // 自分の操作で歩いて落ちた → スタート地点（respawnPoint 指定があればそこ）
+            pos = respawnPoint != null ? respawnPoint.position : initialPosition;
+        }
+
         ragdoll.RecoverAt(pos);
         graceUntil = Time.time + graceTime;
         onRespawned?.Invoke();

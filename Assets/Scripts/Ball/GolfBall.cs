@@ -33,12 +33,19 @@ public class GolfBall : MonoBehaviour
     [SerializeField] private float wallBreakMinSpeed = 3f;    // この相対速度以上で当たった時だけ壊す (m/s)。ゆっくり転がる球では壊れない
     [SerializeField] private int wallDamage = 1;              // 1回の衝突で壁に与えるダメージ
 
+    [Header("場外リスポーン")]
+    [SerializeField] private float outOfBoundsY = -20f;       // これより下に落ちたら場外＝リスポーン
+    [SerializeField] private float respawnHeightOffset = 0.5f;// リスポーン時、地面より少し上に出す高さ (m)
+
     private Rigidbody body;
     private SphereCollider sphere;
     private float slowTimer; // 遅い状態が続いている時間
     private bool isResting;  // 止まって固定中か（プレイヤー等に押されてもブレないようロックしている）
     private RagdollController lastHitBy;    // 直近このボールを打ったプレイヤー（自爆防止用）
     private float lastHitTime = -999f;      // 直近打たれた時刻
+    private Vector3 lastHitPosition;        // 直近「打球した場所」（場外リスポーン先）
+    private bool hasHitPosition;            // 一度でも打たれたか
+    private Vector3 initialPosition;        // 初期位置（まだ打たれていない時のリスポーン先）
 
     /// このボールがローカル操作者のものか。
     public bool OwnedByLocalPlayer => ownedByLocalPlayer;
@@ -96,12 +103,33 @@ public class GolfBall : MonoBehaviour
 
     private void Start()
     {
+        initialPosition = transform.position; // まだ打たれていない時のリスポーン先
         ApplySeeThrough();
     }
 
     private void Update()
     {
         UpdateStopState();
+
+        // 場外チェック：下に落ちたら「打球した場所」へリスポーン（未打球なら初期位置）
+        if (!IsHoled && transform.position.y < outOfBoundsY)
+        {
+            RespawnOutOfBounds();
+        }
+    }
+
+    /// 場外に落ちたボールを、直近の打球地点（無ければ初期位置）へ戻す。
+    private void RespawnOutOfBounds()
+    {
+        Vector3 target = hasHitPosition ? lastHitPosition : initialPosition;
+
+        Unfreeze();               // 固定されていたら解除して動けるように
+        body.WakeUp();
+        body.linearVelocity = Vector3.zero;
+        body.angularVelocity = Vector3.zero;
+        body.position = target + Vector3.up * respawnHeightOffset; // 少し上に出して落として着地させる
+        transform.position = body.position;
+        slowTimer = 0f;
     }
 
     /// このボールを自分のもの（ローカル所有）にするか設定する。透過表示も切り替わる。
@@ -129,6 +157,10 @@ public class GolfBall : MonoBehaviour
         {
             return;
         }
+
+        // 「打球した場所」を記録（場外に落ちたらここへ戻す）
+        lastHitPosition = transform.position;
+        hasHitPosition = true;
 
         // 止まって固定していたら解除（打つと動けるように）
         Unfreeze();
