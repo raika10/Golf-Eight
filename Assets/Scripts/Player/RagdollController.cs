@@ -238,7 +238,9 @@ public class RagdollController : MonoBehaviour
         {
             return; // 遅すぎるボールでは飛ばない
         }
-        Vector3 dir = (relativeVelocity.normalized + Vector3.up * 0.4f).normalized;
+        // relativeVelocity は「ボールの進行方向の逆」を向く（壁破壊で -relativeVelocity を進行方向に使っているのと同じ）。
+        // 反転して、プレイヤーをボールの進む向きへ飛ばす。
+        Vector3 dir = (-relativeVelocity.normalized + Vector3.up * 0.4f).normalized;
         Fling(dir * speed);
     }
 
