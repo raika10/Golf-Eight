@@ -32,6 +32,10 @@ public class GolfBall : MonoBehaviour
     [SerializeField] private bool breakWalls = true;         // 当たった壁（MazeWall）を壊すか
     [SerializeField] private float wallBreakMinSpeed = 3f;    // この相対速度以上で当たった時だけ壊す (m/s)。ゆっくり転がる球では壊れない
     [SerializeField] private int wallDamage = 1;              // 1回の衝突で壁に与えるダメージ
+    [Tooltip("壁を壊した時に貫通して残る速度の割合（0=止まる, 1=減速なし）。跳ね返りを打ち消して進行方向へ通り抜けさせる")]
+    [SerializeField] private float wallPunchThroughRetain = 0.75f;
+    [Tooltip("壁1枚を壊すたびに失う速さ (m/s)。勢いが弱いと壁の手前で止まり、強いほど貫通する")]
+    [SerializeField] private float wallPunchSpeedLoss = 1.5f;
 
     [Header("場外リスポーン")]
     [SerializeField] private float outOfBoundsY = -20f;       // これより下に落ちたら場外＝リスポーン
@@ -39,6 +43,7 @@ public class GolfBall : MonoBehaviour
 
     private Rigidbody body;
     private SphereCollider sphere;
+    private Vector3 lastVelocity; // 物理ステップ前（＝衝突直前）の速度。壁貫通で跳ね返りを打ち消すのに使う
     private float slowTimer; // 遅い状態が続いている時間
     private bool isResting;  // 止まって固定中か（プレイヤー等に押されてもブレないようロックしている）
     private RagdollController lastHitBy;    // 直近このボールを打ったプレイヤー（自爆防止用）
@@ -105,6 +110,16 @@ public class GolfBall : MonoBehaviour
     {
         initialPosition = transform.position; // まだ打たれていない時のリスポーン先
         ApplySeeThrough();
+    }
+
+    private void FixedUpdate()
+    {
+        // 物理ステップの前に、このステップに入る速度（＝衝突直前の速度）を控えておく。
+        // OnCollisionEnter 時点の body.linearVelocity は既に跳ね返り後なので使えない。
+        if (!body.isKinematic)
+        {
+            lastVelocity = body.linearVelocity;
+        }
     }
 
     private void Update()
@@ -185,14 +200,30 @@ public class GolfBall : MonoBehaviour
     private void OnCollisionEnter(Collision collision)
     {
         // 壁（MazeWall）に当たったら壊す。速い当たりだけ壊れるよう相対速度でしきい値判定し、
-        // 衝突点と進行方向（-relativeVelocity）を渡して破片が球の進む向きへ飛ぶようにする。
+        // 衝突直前の速度（lastVelocity）を使って破片を飛ばし＆ボールを貫通させる。
         if (breakWalls)
         {
             MazeWall wall = collision.collider.GetComponentInParent<MazeWall>();
             if (wall != null && collision.relativeVelocity.magnitude >= wallBreakMinSpeed)
             {
                 ContactPoint contact = collision.GetContact(0);
-                wall.TakeDamage(wallDamage, contact.point, -collision.relativeVelocity);
+                // 衝突直前の速度で破片を進行方向へ飛ばす（跳ね返り後の relativeVelocity ではなく実測の入射速度）。
+                wall.TakeDamage(wallDamage, contact.point, lastVelocity);
+
+                // 跳ね返りを打ち消して貫通させる。物理ソルバが既に反発の速度を入れているので、
+                // 衝突直前の速度を元に「進行方向へ通り抜ける速度」で上書きする。
+                // 勢いが強いほど多く残り（貫通）、弱いと wallPunchSpeedLoss で失速して壁の手前で止まる。
+                float throughSpeed = lastVelocity.magnitude * wallPunchThroughRetain - wallPunchSpeedLoss;
+                if (throughSpeed > 0f && lastVelocity.sqrMagnitude > 1e-4f)
+                {
+                    body.linearVelocity = lastVelocity.normalized * throughSpeed;
+                }
+                else
+                {
+                    // 貫通しきれなかった：跳ね返らせず、勢いを殺してその場に留める
+                    body.linearVelocity = Vector3.zero;
+                }
+                return; // このフレームは壁破壊を優先（プレイヤー衝突判定へは進まない）
             }
         }
 
