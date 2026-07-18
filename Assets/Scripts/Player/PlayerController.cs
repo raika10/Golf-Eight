@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -33,6 +34,12 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private float maxPitch = 70f;          // 見下ろしの限界
     [SerializeField] private float cameraSmoothTime = 0.05f; // カメラ位置のスムージング (s)。CharacterControllerの微振動でブレるのを抑える
 
+    [Header("壁の透過（カメラとプレイヤーの間の壁を薄くする）")]
+    [SerializeField] private bool fadeOccludingWalls = true;   // カメラとプレイヤーの間の壁（MazeWall）を透過させる
+    [SerializeField] private float occlusionFadeAlpha = 0.15f; // 遮っている間の透明度（0=完全に透明）
+    [SerializeField] private float occlusionFadeSpeed = 8f;    // 透明/元に戻る速さ（値が大きいほど早い）
+    [SerializeField] private float occlusionCheckRadius = 0.25f; // 壁検出の球の半径 (m)。壁の端でチラつかないよう少し太めに
+
     [Header("アニメーション（未設定なら子のAnimatorを自動取得。無ければ何もしない）")]
     [SerializeField] private Animator animator;             // キャラモデルのAnimator
     [SerializeField] private string speedParam = "Speed";   // 移動量 0(停止)〜1(走り)。Blend Tree で待機/走りを切り替える想定
@@ -63,6 +70,19 @@ public class PlayerController : MonoBehaviour
     private bool actionLocked;          // 空振りの後隙などで一時的に動けないか（見回しは可）
     private float moveSpeedMultiplier = 1f; // 移動速度の倍率（チャージ中に落とす等。1=通常）
     private bool swingHold;             // スイング構えを保持中か（true の間はジャンプで構えを崩さない）
+
+    // 壁の透過：今フェード中の壁ごとに「元のマテリアル」「今のアルファ」を覚えておく。
+    // 元のマテリアルは、透過が終わって不要になったら必ず戻す（他の壁と共有しているマテリアルを汚さないため）。
+    private class WallFadeState
+    {
+        public Material[] originalMaterials;
+        public Material[] instancedMaterials;
+        public float alpha = 1f;
+    }
+    private readonly Dictionary<Renderer, WallFadeState> fadingWalls = new Dictionary<Renderer, WallFadeState>();
+    private static readonly RaycastHit[] occlusionHits = new RaycastHit[8];
+    private readonly HashSet<Renderer> blockingThisFrame = new HashSet<Renderer>();
+    private readonly List<Renderer> wallsToRemove = new List<Renderer>();
     private Transform ragdollFollow;    // 倒れている間の参照（今は未使用。将来の追従用）
     private Vector3 ragdollPivot;       // 倒れた瞬間の注視点。倒れている間はここを軸にカメラを回す
 
@@ -361,6 +381,143 @@ public class PlayerController : MonoBehaviour
             cameraTransform.position = Vector3.SmoothDamp(cameraTransform.position, targetPos, ref cameraVelocity, cameraSmoothTime);
         }
         cameraTransform.rotation = rot; // 向きはマウスに直結（遅れさせない）
+
+        if (fadeOccludingWalls)
+        {
+            UpdateWallFade(cameraTransform.position, pivot);
+        }
+    }
+
+    /// カメラとプレイヤー（pivot）の間にある壁（MazeWall）を透過させる。
+    /// カメラ位置からプレイヤー方向へ球を飛ばし、当たった壁だけ半透明にする。
+    /// 遮っていない壁は元の不透明マテリアルへ戻す（マテリアルを永続的に汚さない）。
+    private void UpdateWallFade(Vector3 camPos, Vector3 pivotPos)
+    {
+        Vector3 toPivot = pivotPos - camPos;
+        float dist = toPivot.magnitude;
+
+        blockingThisFrame.Clear();
+        if (dist > 1e-3f)
+        {
+            Vector3 dir = toPivot / dist;
+            int count = Physics.SphereCastNonAlloc(camPos, occlusionCheckRadius, dir, occlusionHits, dist, ~0, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < count; i++)
+            {
+                MazeWall wall = occlusionHits[i].collider.GetComponentInParent<MazeWall>();
+                if (wall == null)
+                {
+                    continue;
+                }
+                Renderer r = wall.GetComponent<Renderer>();
+                if (r != null)
+                {
+                    blockingThisFrame.Add(r);
+                }
+            }
+        }
+
+        // 今遮っている壁：まだ管理していなければ登録（マテリアルを透過用に複製）
+        foreach (Renderer r in blockingThisFrame)
+        {
+            if (!fadingWalls.ContainsKey(r))
+            {
+                fadingWalls[r] = BeginFade(r);
+            }
+        }
+
+        // 管理中の壁を全部更新：遮っていれば透明へ、そうでなければ元へ近づける
+        wallsToRemove.Clear();
+        foreach (KeyValuePair<Renderer, WallFadeState> kv in fadingWalls)
+        {
+            Renderer r = kv.Key;
+            if (r == null) // 壁が破壊されて消えた
+            {
+                wallsToRemove.Add(r);
+                continue;
+            }
+            WallFadeState state = kv.Value;
+            float target = blockingThisFrame.Contains(r) ? occlusionFadeAlpha : 1f;
+            state.alpha = Mathf.MoveTowards(state.alpha, target, occlusionFadeSpeed * Time.deltaTime);
+            ApplyAlpha(state, state.alpha);
+
+            // 完全に元へ戻ったら、複製マテリアルを片付けて元のマテリアルに戻す（もう管理不要）
+            if (!blockingThisFrame.Contains(r) && state.alpha >= 0.999f)
+            {
+                EndFade(r, state);
+                wallsToRemove.Add(r);
+            }
+        }
+        foreach (Renderer r in wallsToRemove)
+        {
+            fadingWalls.Remove(r);
+        }
+    }
+
+    /// 壁のマテリアルを透過対応の複製に差し替える（元のマテリアルは保持して後で戻す）。
+    private WallFadeState BeginFade(Renderer r)
+    {
+        WallFadeState state = new WallFadeState
+        {
+            originalMaterials = r.sharedMaterials,
+            alpha = 1f,
+        };
+        Material[] instanced = new Material[state.originalMaterials.Length];
+        for (int i = 0; i < instanced.Length; i++)
+        {
+            Material src = state.originalMaterials[i];
+            Material m = src != null ? new Material(src) : new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            MakeTransparent(m);
+            instanced[i] = m;
+        }
+        state.instancedMaterials = instanced;
+        r.materials = instanced;
+        return state;
+    }
+
+    /// URPの不透明マテリアルを、アルファブレンドで透けるモードに切り替える。
+    private void MakeTransparent(Material m)
+    {
+        m.SetFloat("_Surface", 1f); // 0=Opaque, 1=Transparent（URP Lit/Simple Lit共通のプロパティ）
+        m.SetOverrideTag("RenderType", "Transparent");
+        m.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        m.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+        m.SetInt("_ZWrite", 0);
+        m.DisableKeyword("_ALPHATEST_ON");
+        m.EnableKeyword("_ALPHABLEND_ON");
+        m.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+        m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+    }
+
+    /// マテリアルの透明度を反映する（色のアルファ、_BaseColorにも対応）。
+    private void ApplyAlpha(WallFadeState state, float alpha)
+    {
+        for (int i = 0; i < state.instancedMaterials.Length; i++)
+        {
+            Material m = state.instancedMaterials[i];
+            if (m == null) continue;
+            Color c = m.color;
+            c.a = alpha;
+            m.color = c;
+            if (m.HasProperty("_BaseColor"))
+            {
+                Color bc = m.GetColor("_BaseColor");
+                bc.a = alpha;
+                m.SetColor("_BaseColor", bc);
+            }
+        }
+    }
+
+    /// 元の不透明マテリアルへ戻し、複製したマテリアルを破棄する。
+    private void EndFade(Renderer r, WallFadeState state)
+    {
+        r.sharedMaterials = state.originalMaterials;
+        for (int i = 0; i < state.instancedMaterials.Length; i++)
+        {
+            if (state.instancedMaterials[i] != null)
+            {
+                Destroy(state.instancedMaterials[i]);
+            }
+        }
     }
 
     /// WASD を向いている方向基準の水平移動ベクトル（大きさ 0〜1）に変換する。
