@@ -135,6 +135,10 @@ public class PlayerController : MonoBehaviour
         actionLocked = locked;
     }
 
+    /// いま行動をロックされているか（開始前・カウントダウン中・空振りの後隙など）。
+    /// 移動はこのクラスで止まるが、スイングは BallHitController 側でこれを見て止める。
+    public bool IsActionLocked => actionLocked;
+
     /// 移動速度の倍率を設定する（チャージ中に遅くする等）。1で通常。BallHitController から呼ぶ。
     public void SetMoveSpeedMultiplier(float multiplier)
     {

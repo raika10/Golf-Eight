@@ -79,6 +79,18 @@ namespace GolfEight.Network
             ragdollController.WallDamageAuthority = IsServerStarted;
             // 割り当てが既に届いている場合はここで反映（届いていなければ OnChange 側で反映される）
             ApplyBallOwnership();
+
+            // 参加した時点のゲーム状態に合わせて操作ロックを反映する。
+            // プレイヤーは実行時スポーンなので、GameManager 側の状態変化通知だけでは
+            // 「スポーンした時点で既に開始前だった」ケースを取りこぼす。
+            if (IsOwner)
+            {
+                GameManager gameManager = FindFirstObjectByType<GameManager>();
+                if (gameManager != null)
+                {
+                    gameManager.ApplyLocalPlayerInputLock();
+                }
+            }
         }
 
         public override void OnOwnershipClient(NetworkConnection prevOwner)

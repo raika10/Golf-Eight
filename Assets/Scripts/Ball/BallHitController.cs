@@ -209,6 +209,17 @@ public class BallHitController : MonoBehaviour
             return;
         }
 
+        // 行動ロック中（ゲーム開始前・カウントダウン中・ゴール後・空振りの後隙）はスイングできない。
+        // 移動は PlayerController 側で止まるが、スイングはここで止めないと構えられてしまう。
+        if (playerController != null && playerController.IsActionLocked)
+        {
+            if (isCharging)
+            {
+                CancelCharge();
+            }
+            return;
+        }
+
         // 押し始め：どこでも溜め開始できる（SBG風）。対象の有無は「離した瞬間」に判定する。
         // 空振りの後隙中（isRecovering）や空中では始められない。
         bool grounded = playerController == null || playerController.IsGrounded;

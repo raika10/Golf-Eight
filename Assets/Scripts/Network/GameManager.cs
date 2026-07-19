@@ -31,6 +31,39 @@ namespace GolfEight.Network
         /// 現在のゲーム状態（全クライアントで参照可能）。
         public GameState State => state.Value;
 
+        private void Awake()
+        {
+            state.OnChange += OnStateChanged;
+        }
+
+        private void OnStateChanged(GameState prev, GameState next, bool asServer)
+        {
+            ApplyLocalPlayerInputLock();
+        }
+
+        public override void OnStartClient()
+        {
+            base.OnStartClient();
+            ApplyLocalPlayerInputLock();
+        }
+
+        /// ゲームが始まる（Playing になる）まで、この端末で操作しているプレイヤーの行動を止める。
+        /// ロビーで勝手に歩き回ったり、カウントダウン中に動いたりできないようにするため。
+        /// Playing 以外（Lobby / Countdown / Finished）はすべてロック対象。
+        /// プレイヤーは実行時にスポーンするので、スポーン側（PlayerNetworkSync）からも呼ぶ。
+        public void ApplyLocalPlayerInputLock()
+        {
+            bool locked = state.Value != GameState.Playing;
+            foreach (PlayerController pc in FindObjectsByType<PlayerController>(FindObjectsSortMode.None))
+            {
+                if (pc.IsLocalPlayer)
+                {
+                    pc.SetActionLocked(locked);
+                    return;
+                }
+            }
+        }
+
         public override void OnStartServer()
         {
             base.OnStartServer();
