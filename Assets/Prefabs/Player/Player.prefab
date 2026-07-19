@@ -347,9 +347,9 @@ MonoBehaviour:
   playerAimHeight: 1
   breakWallsOnSwing: 1
   wallSwingRange: 2.5
-  wallSwingHeight: 1
+  wallSwingHeight: 0
   wallSwingDamage: 1
-  wallSwingImpact: 8
+  wallSwingImpact: 40
   wallSwingMask:
     serializedVersion: 2
     m_Bits: 4294967295
@@ -513,22 +513,25 @@ MonoBehaviour:
   _spectatorInterpolation: 2
   _enableTeleport: 0
   _teleportThreshold: 1
-  <PrefabId>k__BackingField: 65535
+  <PrefabId>k__BackingField: 3
   <SpawnableCollectionId>k__BackingField: 0
   <AssetPathHash>k__BackingField: 5306845881338098766
   SceneId: 0
   SerializedTransformProperties:
-    Position: {x: 0, y: 0, z: 0}
-    Rotation: {x: 0, y: 0, z: 0, w: 0}
-    Scale: {x: 0, y: 0, z: 0}
-    IsValid: 0
+    Position: {x: 20.87, y: 4.38, z: 2.13005}
+    Rotation: {x: 0, y: 0, z: 0, w: 1}
+    Scale: {x: 1, y: 1, z: 1}
+    IsValid: 1
   <IsNested>k__BackingField: 0
   WasActiveDuringEdit: 0
   WasActiveDuringEdit_Set1: 1
   <ComponentIndex>k__BackingField: 0
   <PredictedSpawn>k__BackingField: {fileID: 0}
   <PredictedOwner>k__BackingField: {fileID: 0}
-  NetworkBehaviours: []
+  NetworkBehaviours:
+  - {fileID: 244619813035071223}
+  - {fileID: 1784575135263834979}
+  - {fileID: 1351309258938878726}
   InitializedParentNetworkBehaviour: {fileID: 0}
   InitializedNestedNetworkObjects: []
   RuntimeParentNetworkBehaviour: {fileID: 0}
@@ -539,7 +542,7 @@ MonoBehaviour:
   _initializeOrder: 0
   _preventDespawnOnDisconnect: 0
   _defaultDespawnType: 0
-  _initializedTimestamp: 0
+  _initializedTimestamp: -8584171351837632530
 --- !u!114 &244619813035071223
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -552,9 +555,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a2836e36774ca1c4bbbee976e17b649c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: FishNet.Runtime::FishNet.Component.Transforming.NetworkTransform
-  _componentIndexCache: 255
+  _componentIndexCache: 0
   _addedNetworkObject: {fileID: 4984131531420145746}
-  _networkObjectCache: {fileID: 0}
+  _networkObjectCache: {fileID: 4984131531420145746}
   _componentConfiguration: 1
   _synchronizeParent: 0
   _packing:
@@ -598,9 +601,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 01fa2bcf18c85dd4db4e4e9ecb24f578, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GolfEight.Network.PlayerNetworkSync
-  _componentIndexCache: 255
+  _componentIndexCache: 1
   _addedNetworkObject: {fileID: 4984131531420145746}
-  _networkObjectCache: {fileID: 0}
+  _networkObjectCache: {fileID: 4984131531420145746}
 --- !u!114 &1351309258938878726
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -613,9 +616,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e8cac635f24954048aad3a6ff9110beb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: FishNet.Runtime::FishNet.Component.Animating.NetworkAnimator
-  _componentIndexCache: 255
+  _componentIndexCache: 2
   _addedNetworkObject: {fileID: 4984131531420145746}
-  _networkObjectCache: {fileID: 0}
+  _networkObjectCache: {fileID: 4984131531420145746}
   IgnoredParameters: []
   _animator: {fileID: 406837434560219145}
   _synchronizeWhenDisabled: 0
