@@ -333,11 +333,23 @@ MonoBehaviour:
   goalPanel: {fileID: 1240742765}
   goalText: {fileID: 1522717390}
   playerController: {fileID: 1679859970}
+  timerUI: {fileID: 803628126}
 --- !u!224 &803628123 stripped
 RectTransform:
   m_CorrespondingSourceObject: {fileID: 4142901515777274863, guid: bce118d480e1d844696932c518ebf646, type: 3}
   m_PrefabInstance: {fileID: 57198127}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &803628126 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 8836237948010639289, guid: bce118d480e1d844696932c518ebf646, type: 3}
+  m_PrefabInstance: {fileID: 57198127}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 803628115}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 66653723e4364e44bba51da4bb7fdb91, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TimerUI
 --- !u!1 &891297125
 GameObject:
   m_ObjectHideFlags: 0

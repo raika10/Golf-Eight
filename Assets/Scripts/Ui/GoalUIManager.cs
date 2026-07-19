@@ -7,6 +7,8 @@ public class GoalUIManager : MonoBehaviour
     public GameObject goalPanel;
     public TMP_Text goalText;
     public PlayerController playerController;
+    public TimerUI timerUI;
+
 
     void Start()
     {
@@ -22,6 +24,10 @@ public class GoalUIManager : MonoBehaviour
         // ゴール時にプレイヤーを動けなくする
         if (playerController != null)
             playerController.SetActionLocked(true);
+
+        // タイマーを止める
+        if (timerUI != null)
+            timerUI.StopTimer();
     }
 
     public void OnNextMatch()
