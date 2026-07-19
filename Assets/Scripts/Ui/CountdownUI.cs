@@ -7,12 +7,7 @@ public class CountdownUI : MonoBehaviour
     public TMP_Text countdownText;
     public TimerUI timerUI;
 
-    void Start()
-    {
-        StartCoroutine(PlayCountdown());
-    }
-
-    IEnumerator PlayCountdown()
+    public IEnumerator PlayCountdown()
     {
         countdownText.text = "3";
         yield return new WaitForSeconds(1f);
