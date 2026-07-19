@@ -403,6 +403,10 @@ MonoBehaviour:
   enableTestKey: 1
   testFlingKey: 32
   testFlingSpeed: 40
+  strengthenJoints: 1
+  jointProjectionDistance: 0.05
+  jointProjectionAngle: 20
+  boneSolverIterations: 20
 --- !u!114 &5794815139418449670
 MonoBehaviour:
   m_ObjectHideFlags: 0
