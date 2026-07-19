@@ -19,6 +19,12 @@ public class GoalUIManager : MonoBehaviour
     // GolfHoleのonBallHoledから呼ばれる
     public void OnBallHoled(GolfBall ball)
     {
+        // オンラインでは GameManager が勝者を判定して全員へ配るので、ここでは何もしない。
+        // 両方走らせると、先に「ゴール！！」が出てから勝者表示で上書きされてちらつく。
+        if (FindFirstObjectByType<GolfEight.Network.GameManager>() != null)
+        {
+            return;
+        }
         ShowGoal();
     }
 
@@ -29,20 +35,45 @@ public class GoalUIManager : MonoBehaviour
         ShowResult("ゴール！！");
     }
 
+    /// 勝者を表示する。勝者はカップインしたボールの持ち主。
+    /// winnerIndex が負なら持ち主を特定できなかった場合なので、単に「ゴール！！」に留める。
+    public void ShowWinner(int winnerIndex)
+    {
+        if (winnerIndex < 0)
+        {
+            ShowGoal();
+            return;
+        }
+        ShowResult(GolfEight.Network.PlayerColors.GetDisplayName(winnerIndex) + " の勝ち！",
+                   GolfEight.Network.PlayerColors.Get(winnerIndex));
+    }
+
     /// 制限時間切れの表示を出す。誰もカップインしていないので「ゴール」とは出し分ける。
     public void ShowTimeUp()
     {
         ShowResult("タイムアップ");
     }
 
+    /// 決着表示を消してロビー状態に戻す（再戦時に GameManager から呼ぶ）。
+    /// 行動ロックはゲーム状態が決めるので、ここでは解除しない。
+    public void HideResult()
+    {
+        if (goalPanel != null)
+            goalPanel.SetActive(false);
+    }
+
     /// 決着時の共通表示。何度呼ばれても同じ結果になる（サーバーは GolfHole 経由と
     /// GameManager の配信の両方から呼ばれうるため）。
-    private void ShowResult(string message)
+    /// color を渡すと文字色を勝者の色に合わせる（渡さなければ白）。
+    private void ShowResult(string message, Color? color = null)
     {
         if (goalPanel != null)
             goalPanel.SetActive(true);
         if (goalText != null)
+        {
             goalText.text = message;
+            goalText.color = color ?? Color.white;
+        }
 
         // 決着後はプレイヤーを動けなくする
         PlayerController target = ResolvePlayerController();

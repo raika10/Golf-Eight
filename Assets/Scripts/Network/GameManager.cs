@@ -94,6 +94,55 @@ namespace GolfEight.Network
             StartCoroutine(ServerGameFlow());
         }
 
+        /// 決着後にロビーへ戻して、また同じ面子で始められるようにする（サーバーから呼ぶ）。
+        /// クライアントは接続したままなので、抜けるまで何度でも遊べる。
+        [Server]
+        public void ReturnToLobby()
+        {
+            if (state.Value == GameState.Lobby)
+            {
+                return;
+            }
+
+            // 進行中の試合コルーチン（制限時間の待ち）が残っていると、
+            // ロビーに戻った後に時間切れが発火してしまうので止める。
+            StopAllCoroutines();
+
+            state.Value = GameState.Lobby;
+
+            // ボールを初期位置へ。スポーンし直さないのは色と担当プレイヤーの割り当てを保つため。
+            NetworkSpawner spawner = FindFirstObjectByType<NetworkSpawner>();
+            if (spawner != null)
+            {
+                spawner.ResetBallsForNewMatch();
+            }
+
+            // 迷路を作り直す。前の試合で壊れた壁を元に戻すため（シードも新しくして別の迷路にする）。
+            MazeNetworkSync maze = FindFirstObjectByType<MazeNetworkSync>();
+            if (maze != null)
+            {
+                maze.RegenerateWithNewSeed();
+            }
+
+            ResetForLobby_ObserversRpc();
+        }
+
+        /// 各クライアントでロビー表示に戻す。プレイヤーの位置は所有者が権威なので各自で戻す。
+        [ObserversRpc]
+        private void ResetForLobby_ObserversRpc()
+        {
+            GoalUIManager goalUI = FindFirstObjectByType<GoalUIManager>();
+            if (goalUI != null)
+            {
+                goalUI.HideResult();
+            }
+
+            foreach (PlayerNetworkSync player in FindObjectsByType<PlayerNetworkSync>(FindObjectsSortMode.None))
+            {
+                player.ResetToStartPoint(); // 自分が操作しているプレイヤーだけが実際に動く
+            }
+        }
+
         /// カップイン通知を購読する。カップは MazeGenerator がゴールのマスに実行時生成するので、
         /// シーンから探して拾う（Inspector で明示指定されたものも併せて対象にする）。
         /// カップイン判定そのものはサーバーでしか走らない（クライアントのボールは kinematic で
@@ -140,7 +189,7 @@ namespace GolfEight.Network
 
             if (state.Value == GameState.Playing)
             {
-                FinishGame(FinishReason.TimeUp);
+                FinishGame(FinishReason.TimeUp, -1); // 時間切れは勝者なし
             }
         }
 
@@ -150,15 +199,40 @@ namespace GolfEight.Network
             {
                 return;
             }
-            FinishGame(FinishReason.Goal);
+            // 勝者は「入ったボールの持ち主」。担当ボールは NetworkSpawner が接続順に割り当てている。
+            FinishGame(FinishReason.Goal, FindOwnerIndexOfBall(ball));
         }
 
+        /// そのボールを担当しているプレイヤーの接続順インデックスを返す。見つからなければ -1。
         [Server]
-        private void FinishGame(FinishReason reason)
+        private int FindOwnerIndexOfBall(GolfBall ball)
+        {
+            if (ball == null)
+            {
+                return -1;
+            }
+            NetworkObject ballObject = ball.GetComponent<NetworkObject>();
+            if (ballObject == null)
+            {
+                return -1;
+            }
+            foreach (PlayerNetworkSync player in FindObjectsByType<PlayerNetworkSync>(FindObjectsSortMode.None))
+            {
+                if (player.AssignedBall == ballObject)
+                {
+                    return player.PlayerIndex;
+                }
+            }
+            return -1;
+        }
+
+        /// 決着させる。winnerIndex は勝者の接続順インデックス（時間切れなど勝者なしは -1）。
+        [Server]
+        private void FinishGame(FinishReason reason, int winnerIndex)
         {
             state.Value = GameState.Finished;
             StopTimer_ObserversRpc();
-            ShowResult_ObserversRpc(reason);
+            ShowResult_ObserversRpc(reason, winnerIndex);
         }
 
         /// 決着表示を全クライアントへ配る。
@@ -167,7 +241,7 @@ namespace GolfEight.Network
         /// サーバーも除外しない：時間切れの場合サーバーは GolfHole を通らず、
         /// 除外するとホストだけ何も表示されなくなる。表示処理は何度呼んでも同じ結果になる。
         [ObserversRpc]
-        private void ShowResult_ObserversRpc(FinishReason reason)
+        private void ShowResult_ObserversRpc(FinishReason reason, int winnerIndex)
         {
             GoalUIManager goalUI = FindFirstObjectByType<GoalUIManager>();
             if (goalUI == null)
@@ -176,7 +250,7 @@ namespace GolfEight.Network
             }
             if (reason == FinishReason.Goal)
             {
-                goalUI.ShowGoal();
+                goalUI.ShowWinner(winnerIndex);
             }
             else
             {

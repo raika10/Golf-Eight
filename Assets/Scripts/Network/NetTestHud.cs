@@ -40,10 +40,22 @@ namespace GolfEight.Network
             {
                 GUILayout.Label(serverStarted ? "Hosting" : "Connected as client");
 
-                // net-bootstrap 検証用：サーバー側でだけ GameManager.RequestStartGame を叩ける（[Server]属性がクライアント呼び出しを弾く）
-                if (serverStarted && gameManager != null && GUILayout.Button("Start Game"))
+                // 検証用：サーバー側でだけ進行を操作できる（[Server]属性がクライアント呼び出しを弾く）
+                if (serverStarted && gameManager != null)
                 {
-                    gameManager.RequestStartGame();
+                    GUILayout.Label("State: " + gameManager.State);
+
+                    // ロビーからだけ開始できる（RequestStartGame 側でも弾いている）
+                    if (gameManager.State == GameManager.GameState.Lobby && GUILayout.Button("Start Game"))
+                    {
+                        gameManager.RequestStartGame();
+                    }
+
+                    // 決着後はロビーへ戻して再戦できる。クライアントは接続したまま残る
+                    if (gameManager.State == GameManager.GameState.Finished && GUILayout.Button("Return to Lobby"))
+                    {
+                        gameManager.ReturnToLobby();
+                    }
                 }
             }
 

@@ -22,6 +22,15 @@ namespace GolfEight.Network
         // 用途は「自分のボールを見分ける透過シルエット」。誰でも誰のボールを打てる仕様自体は変えない。
         private readonly SyncVar<NetworkObject> assignedBall = new SyncVar<NetworkObject>();
 
+        // 接続順のインデックス。色（担当ボールと共通）と勝敗表示の名前に使う。
+        private readonly SyncVar<int> playerIndex = new SyncVar<int>(-1);
+
+        /// 接続順のインデックス（-1 は未割り当て）。勝者表示などに使う。
+        public int PlayerIndex => playerIndex.Value;
+
+        /// このプレイヤーの担当ボール。勝者判定（入ったボールの持ち主）で使う。
+        public NetworkObject AssignedBall => assignedBall.Value;
+
         private void Awake()
         {
             playerController = GetComponent<PlayerController>();
@@ -33,6 +42,70 @@ namespace GolfEight.Network
             }
             // 割り当てはサーバーから遅れて届くことがあるので、届いた時点でも反映できるようにしておく
             assignedBall.OnChange += OnAssignedBallChanged;
+            playerIndex.OnChange += OnPlayerIndexChanged;
+        }
+
+        /// サーバーがこのプレイヤーの接続順インデックスを設定する（NetworkSpawner から呼ぶ）。
+        [Server]
+        public void SetPlayerIndex(int index)
+        {
+            playerIndex.Value = index;
+        }
+
+        private void OnPlayerIndexChanged(int prev, int next, bool asServer)
+        {
+            ApplyColor();
+        }
+
+        /// 自分が操作しているプレイヤーをスタート地点へ戻す（再戦時に各クライアントが自分の分を実行する）。
+        /// 位置の権威は所有者にあるので、サーバーが直接動かしても所有者の値で上書きされてしまう。
+        /// そのため「各自が自分のプレイヤーを戻す」形にしている。
+        public void ResetToStartPoint()
+        {
+            if (!IsOwner)
+            {
+                return;
+            }
+
+            NetworkSpawner spawner = FindFirstObjectByType<NetworkSpawner>();
+            Transform start = spawner != null ? spawner.GetPlayerStart(playerIndex.Value) : null;
+            if (start == null)
+            {
+                return;
+            }
+
+            // 吹っ飛ばされて倒れたままなら、起き上がらせつつスタート地点へ戻す
+            if (ragdollController != null && ragdollController.IsDown)
+            {
+                ragdollController.RecoverAt(start.position);
+            }
+
+            // CharacterController が有効なままだと transform を直接動かしても戻されるので、一時的に切る
+            CharacterController cc = GetComponent<CharacterController>();
+            bool ccWasEnabled = cc != null && cc.enabled;
+            if (cc != null)
+            {
+                cc.enabled = false;
+            }
+            transform.SetPositionAndRotation(start.position, start.rotation);
+            if (cc != null)
+            {
+                cc.enabled = ccWasEnabled;
+            }
+        }
+
+        /// プレイヤーのモデルを担当ボールと同じ色にする。全クライアントで同じ色になる。
+        private void ApplyColor()
+        {
+            if (playerIndex.Value < 0)
+            {
+                return;
+            }
+            Color color = PlayerColors.Get(playerIndex.Value);
+            foreach (SkinnedMeshRenderer smr in GetComponentsInChildren<SkinnedMeshRenderer>(includeInactive: true))
+            {
+                PlayerColors.Apply(smr, color);
+            }
         }
 
         /// サーバーがこのプレイヤーの担当ボールを設定する（NetworkSpawner から呼ぶ）。
@@ -79,6 +152,7 @@ namespace GolfEight.Network
             ragdollController.WallDamageAuthority = IsServerStarted;
             // 割り当てが既に届いている場合はここで反映（届いていなければ OnChange 側で反映される）
             ApplyBallOwnership();
+            ApplyColor();
 
             // 参加した時点のゲーム状態に合わせて操作ロックを反映する。
             // プレイヤーは実行時スポーンなので、GameManager 側の状態変化通知だけでは

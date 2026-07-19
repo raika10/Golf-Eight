@@ -284,6 +284,35 @@ public class GolfBall : MonoBehaviour
         }
     }
 
+    /// 次の試合に向けて、指定位置で初期状態に戻す（再戦時にサーバーが呼ぶ）。
+    /// カップイン・停止固定・打球履歴をすべて解除するので、また打てる状態になる。
+    /// 権威の無い端末で呼ぶと kinematic を解除してサーバーとズレるため、権威側だけが実行する。
+    public void ResetForNewMatch(Vector3 position)
+    {
+        if (!StateAuthority)
+        {
+            return;
+        }
+
+        IsHoled = false;
+        isResting = false;
+        slowTimer = 0f;
+        hasHitPosition = false;
+        lastHitBy = null;
+        lastHitTime = -999f;
+        initialPosition = position;
+
+        // 物理を動ける状態に戻してから配置する
+        body.isKinematic = false;
+        body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+        body.linearVelocity = Vector3.zero;
+        body.angularVelocity = Vector3.zero;
+        body.position = position;
+        transform.position = position;
+
+        ApplySeeThrough(); // カップインで消したシルエットを戻す
+    }
+
     /// カップインしたときに呼ぶ。速度を消してその場に固定し、以降は打てなくする。
     /// 位置合わせ（カップ中心へ吸い込む）は呼び出し側（GolfHole）が済ませてから呼ぶ。
     public void MarkHoled()

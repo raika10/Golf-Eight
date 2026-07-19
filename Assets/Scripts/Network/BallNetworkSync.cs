@@ -23,11 +23,38 @@ namespace GolfEight.Network
         // これが無いと「止まっている球だけ打てる」判定が常に成立せず打てなくなる。
         private readonly SyncVar<bool> syncedIsMoving = new SyncVar<bool>();
 
+        // 担当プレイヤーと揃えるための色。サーバー（NetworkSpawner）がスポーン時に決めて全員へ配る。
+        private readonly SyncVar<int> colorIndex = new SyncVar<int>(-1);
+
         private void Awake()
         {
             body = GetComponent<Rigidbody>();
             ball = GetComponent<GolfBall>();
             syncedIsMoving.OnChange += OnIsMovingChanged;
+            colorIndex.OnChange += OnColorIndexChanged;
+        }
+
+        /// サーバーがこのボールの色を決める（NetworkSpawner から呼ぶ）。
+        [Server]
+        public void SetColorIndex(int index)
+        {
+            colorIndex.Value = index;
+        }
+
+        private void OnColorIndexChanged(int prev, int next, bool asServer)
+        {
+            ApplyColor();
+        }
+
+        /// ボール本体を担当プレイヤーと同じ色にする。
+        /// 透過シルエット(SeeThrough)は「自分の球か」を示す別用途なので触らない。
+        private void ApplyColor()
+        {
+            if (colorIndex.Value < 0)
+            {
+                return;
+            }
+            PlayerColors.Apply(GetComponent<Renderer>(), PlayerColors.Get(colorIndex.Value));
         }
 
         private void OnIsMovingChanged(bool prev, bool next, bool asServer)
@@ -61,6 +88,7 @@ namespace GolfEight.Network
             }
             // 接続時点の値を反映しておく（以降の変化は OnChange で届く）
             ball.SetNetworkIsMoving(syncedIsMoving.Value);
+            ApplyColor();
         }
 
         public override void OnStartServer()

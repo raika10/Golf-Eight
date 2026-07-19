@@ -15,9 +15,15 @@ namespace GolfEight.Network
 
         private readonly SyncVar<int> seed = new SyncVar<int>();
 
+        // 生成済みのシード。同じシードで二重生成しないため、および
+        // 新しいシードが届いたときに作り直すべきか判断するために覚えておく。
+        private int generatedSeed;
+        private bool hasGenerated;
+
         private void Awake()
         {
             mazeGenerator = GetComponent<MazeGenerator>();
+            seed.OnChange += OnSeedChanged;
         }
 
         public override void OnStartServer()
@@ -29,10 +35,36 @@ namespace GolfEight.Network
         public override void OnStartClient()
         {
             base.OnStartClient();
+            GenerateIfNeeded();
+        }
+
+        private void OnSeedChanged(int prev, int next, bool asServer)
+        {
+            GenerateIfNeeded();
+        }
+
+        /// 新しいシードを配って迷路を作り直す（再戦時にサーバーから呼ぶ）。
+        /// 前の試合で壊れた壁を元に戻すために、同じ迷路を修復するのではなく作り直している。
+        [Server]
+        public void RegenerateWithNewSeed()
+        {
+            seed.Value = Random.Range(0, int.MaxValue);
+        }
+
+        /// まだそのシードで生成していなければ迷路を作る。
+        /// GenerateMaze は既存のブロックを丸ごと作り直すので、壊れた壁もこれで元に戻る。
+        private void GenerateIfNeeded()
+        {
+            if (hasGenerated && generatedSeed == seed.Value)
+            {
+                return;
+            }
             mazeGenerator.useRandomSeed = false;
             mazeGenerator.seed = seed.Value;
             mazeGenerator.GenerateMaze();
             BuildWallCache();
+            generatedSeed = seed.Value;
+            hasGenerated = true;
         }
 
         /// 生成した壁を名前で引けるように辞書化する。壁は数百個あり、破壊のたびに
