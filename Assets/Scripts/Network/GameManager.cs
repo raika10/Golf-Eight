@@ -35,17 +35,7 @@ namespace GolfEight.Network
         {
             base.OnStartServer();
             state.Value = GameState.Lobby;
-
-            // カップイン判定はサーバーだけが状態遷移の起点になる。
-            // クライアント側でも GolfHole の見た目（ボールが落ちる演出）は各自ローカルで独立に再生されるので、
-            // ここでの購読はサーバーの勝敗判定専用（二重に状態遷移させないためサーバーのみ購読する）。
-            foreach (GolfHole hole in golfHoles)
-            {
-                if (hole != null)
-                {
-                    hole.onBallHoled.AddListener(OnBallHoled);
-                }
-            }
+            HookHoles();
         }
 
         /// ロビー状態からゲーム開始をリクエストする（NetworkSpawner やデバッグ用UIから呼ぶ想定）。
@@ -56,7 +46,39 @@ namespace GolfEight.Network
             {
                 return;
             }
+
+            // カップは迷路と一緒に実行時生成されるため、接続後・開始時点で改めて拾い直す
+            //（Inspector の golfHoles では実行時生成のカップを参照できない）。
+            HookHoles();
             StartCoroutine(ServerGameFlow());
+        }
+
+        /// カップイン通知を購読する。カップは MazeGenerator がゴールのマスに実行時生成するので、
+        /// シーンから探して拾う（Inspector で明示指定されたものも併せて対象にする）。
+        /// カップイン判定そのものはサーバーでしか走らない（クライアントのボールは kinematic で
+        /// GolfHole.HandleBall が即 return するため）。ここでの購読はサーバーの勝敗判定専用。
+        [Server]
+        private void HookHoles()
+        {
+            foreach (GolfHole hole in FindObjectsByType<GolfHole>(FindObjectsSortMode.None))
+            {
+                // 二重登録を避けるため、必ず外してから付ける
+                hole.onBallHoled.RemoveListener(OnBallHoled);
+                hole.onBallHoled.AddListener(OnBallHoled);
+            }
+
+            if (golfHoles == null)
+            {
+                return;
+            }
+            foreach (GolfHole hole in golfHoles)
+            {
+                if (hole != null)
+                {
+                    hole.onBallHoled.RemoveListener(OnBallHoled);
+                    hole.onBallHoled.AddListener(OnBallHoled);
+                }
+            }
         }
 
         private IEnumerator ServerGameFlow()
@@ -95,6 +117,24 @@ namespace GolfEight.Network
         {
             state.Value = GameState.Finished;
             StopTimer_ObserversRpc();
+            ShowGoal_ObserversRpc();
+        }
+
+        /// ゴール表示を全クライアントへ配る。
+        /// カップイン判定はサーバーでしか走らない（クライアントのボールは kinematic）ため、
+        /// これが無いとホストの画面にしかゴールUIが出ない。
+        [ObserversRpc]
+        private void ShowGoal_ObserversRpc()
+        {
+            if (IsServerStarted)
+            {
+                return; // サーバーは GolfHole から直接 GoalUIManager が呼ばれて表示済み
+            }
+            GoalUIManager goalUI = FindFirstObjectByType<GoalUIManager>();
+            if (goalUI != null)
+            {
+                goalUI.ShowGoal();
+            }
         }
 
         [ObserversRpc]
