@@ -61,6 +61,13 @@ public class RagdollController : MonoBehaviour
     /// KnockbackReceiver が「着地してから」の正しいタイミングで起き上がりを管理するときに使う。
     public bool SuppressAutoRecover { get; set; }
 
+    /// ネットワークのリモート（＝この端末が所有していない）プレイヤーか。
+    /// true の間は、本体の位置と CharacterController の有効/無効を触らず NetworkTransform（owner権威）に委譲し、
+    /// ラグドールは見た目（骨の物理）だけ再生する。吹っ飛び中の物理は各端末で独立に走って着地点が
+    /// わずかにズレるため、位置は owner のものへ一本化しないと撃ち合うたびにズレが累積する。
+    /// PlayerNetworkSync が IsOwner に応じて設定する。単体（非ネットワーク）では常に false のまま。
+    public bool NetworkRemote { get; set; }
+
     private void Awake()
     {
         cc = GetComponent<CharacterController>();
@@ -327,10 +334,15 @@ public class RagdollController : MonoBehaviour
     /// 指定した位置で起き上がってアニメ状態に戻る（場外リスポーンなどに使う）。
     public void RecoverAt(Vector3 position)
     {
-        // 先にプレイヤー本体を移す。その後で ragdoll を解除するので、
-        // 骨は新しい位置で立ちポーズにスナップする（元の位置へワープして見えない）。
-        transform.position = position;
-        transform.rotation = Quaternion.Euler(0f, transform.eulerAngles.y, 0f); // 直立に戻す
+        // リモート（非所有）プレイヤーは本体位置を NetworkTransform（owner権威）に委譲する。
+        // 自前のラグドール物理で求めた着地点でワープさせると owner の着地点とズレ、累積するため触らない。
+        if (!NetworkRemote)
+        {
+            // 先にプレイヤー本体を移す。その後で ragdoll を解除するので、
+            // 骨は新しい位置で立ちポーズにスナップする（元の位置へワープして見えない）。
+            transform.position = position;
+            transform.rotation = Quaternion.Euler(0f, transform.eulerAngles.y, 0f); // 直立に戻す
+        }
 
         isRagdoll = false;
         SetControlsActive(true);   // 操作を戻す
@@ -391,7 +403,13 @@ public class RagdollController : MonoBehaviour
         if (animator != null) animator.enabled = active;
         if (playerController != null) playerController.SetRagdollMode(!active, active ? null : hipsBone);
         if (hitController != null) hitController.enabled = active;
-        cc.enabled = active;
+        // リモート（非所有）プレイヤーの CharacterController は NetworkTransform が管理するので触らない。
+        // ここで有効化すると、非所有側で重力移動・着地計算が独自に走って owner権威の位置同期と競合し、
+        // 撃ち合うたびに位置がズレて累積する（見た目のラグドール＝骨の物理は NetworkRemote でも再生される）。
+        if (!NetworkRemote)
+        {
+            cc.enabled = active;
+        }
     }
 
     /// 骨を物理（floppy ragdoll）にするか、固まったポーズ（キネマティック）にするか。

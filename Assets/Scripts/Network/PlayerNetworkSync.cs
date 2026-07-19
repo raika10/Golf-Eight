@@ -13,12 +13,14 @@ namespace GolfEight.Network
     public class PlayerNetworkSync : NetworkBehaviour
     {
         private PlayerController playerController;
+        private RagdollController ragdollController;
         private Camera playerCamera;
         private AudioListener playerAudioListener;
 
         private void Awake()
         {
             playerController = GetComponent<PlayerController>();
+            ragdollController = GetComponent<RagdollController>();
             playerCamera = GetComponentInChildren<Camera>(includeInactive: true);
             if (playerCamera != null)
             {
@@ -41,6 +43,10 @@ namespace GolfEight.Network
         private void ApplyOwnership()
         {
             playerController.SetLocalPlayer(IsOwner);
+            // リモート（非所有）プレイヤーは本体位置・CharacterController を NetworkTransform（owner権威）へ委譲し、
+            // ラグドールは見た目だけ再生する。これで吹っ飛ばし後の着地位置が owner のものに一本化され、
+            // 撃ち合いを繰り返しても位置ズレが累積しない。
+            ragdollController.NetworkRemote = !IsOwner;
             if (playerCamera != null)
             {
                 playerCamera.enabled = IsOwner;

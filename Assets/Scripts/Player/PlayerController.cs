@@ -227,8 +227,14 @@ public class PlayerController : MonoBehaviour
         // 他プレイヤー／ダミー：入力は受け付けず、重力で地面に立っているだけ
         if (!isLocalPlayer)
         {
-            UpdateVerticalVelocity();
-            controller.Move(new Vector3(0f, verticalVelocity, 0f) * Time.deltaTime);
+            // ネットワークのリモートプレイヤーは NetworkTransform が CharacterController を無効化して
+            // 位置を管理する。無効な CC に Move を呼ぶと警告が出るうえ、有効時は owner権威の同期と競合するので、
+            // CC が有効なとき（単体テスト等）だけ重力移動する。ネットワーク時は位置を NetworkTransform に委譲。
+            if (controller.enabled)
+            {
+                UpdateVerticalVelocity();
+                controller.Move(new Vector3(0f, verticalVelocity, 0f) * Time.deltaTime);
+            }
             UpdateAnimator(0f); // 待機アニメ
             return;
         }
@@ -547,7 +553,7 @@ public class PlayerController : MonoBehaviour
         {
             verticalVelocity = -1f; // 接地中は地面に軽く押し付けて張り付かせる
 
-            bool jumpPressed = Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame;
+            bool jumpPressed = isLocalPlayer && Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame;
             if (jumpPressed)
             {
                 // v = sqrt(2 * h * g) で目標の高さに届く初速を求める
