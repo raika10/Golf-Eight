@@ -129,6 +129,13 @@ public class GolfHole : MonoBehaviour
         // MarkHoled で isKinematic になるので、以降は物理に邪魔されず transform で動かせる。
         ball.MarkHoled();
         StartCoroutine(DropIntoCup(ball));
+
+        // ここを追加するだけ
+        GoalUIManager goalUI = FindObjectOfType<GoalUIManager>();
+        if (goalUI != null)
+        {
+            goalUI.OnBallHoled(ball);
+        }
     }
 
     /// カップの真上へ横に寄せてから、中へストンと落として底で止める。
