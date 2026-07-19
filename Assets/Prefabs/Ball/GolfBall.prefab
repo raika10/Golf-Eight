@@ -163,7 +163,7 @@ MonoBehaviour:
   angularDamping: 0.6
   restLockSpeed: 1
   stopDuration: 0.4
-  ownedByLocalPlayer: 1
+  ownedByLocalPlayer: 0
   seeThroughRenderer: {fileID: 2616668456520281973}
   hitImmunityTime: 0.2
   breakWalls: 1

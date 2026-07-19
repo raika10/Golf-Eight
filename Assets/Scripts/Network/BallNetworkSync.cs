@@ -26,6 +26,9 @@ namespace GolfEight.Network
         public override void OnStartClient()
         {
             base.OnStartClient();
+            // 物理を回すのも、停止判定・場外リスポーン・衝突効果を決めるのもサーバーだけ。
+            // クライアントは kinematic にして位置を NetworkTransform に委ねる。
+            ball.StateAuthority = IsServerStarted;
             if (!IsServerStarted)
             {
                 body.isKinematic = true;
@@ -35,6 +38,7 @@ namespace GolfEight.Network
         public override void OnStartServer()
         {
             base.OnStartServer();
+            ball.StateAuthority = true;
             ball.OnWallDamaged += HandleWallDamaged;
             ball.OnPlayerImpact += HandlePlayerImpact;
         }

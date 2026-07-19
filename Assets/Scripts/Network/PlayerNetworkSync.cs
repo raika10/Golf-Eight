@@ -1,5 +1,6 @@
 using FishNet.Connection;
 using FishNet.Object;
+using FishNet.Object.Synchronizing;
 using UnityEngine;
 
 namespace GolfEight.Network
@@ -17,6 +18,10 @@ namespace GolfEight.Network
         private Camera playerCamera;
         private AudioListener playerAudioListener;
 
+        // このプレイヤーに割り当てられたボール。サーバー（NetworkSpawner）が接続順に決めて全員へ配る。
+        // 用途は「自分のボールを見分ける透過シルエット」。誰でも誰のボールを打てる仕様自体は変えない。
+        private readonly SyncVar<NetworkObject> assignedBall = new SyncVar<NetworkObject>();
+
         private void Awake()
         {
             playerController = GetComponent<PlayerController>();
@@ -26,6 +31,44 @@ namespace GolfEight.Network
             {
                 playerAudioListener = playerCamera.GetComponent<AudioListener>();
             }
+            // 割り当てはサーバーから遅れて届くことがあるので、届いた時点でも反映できるようにしておく
+            assignedBall.OnChange += OnAssignedBallChanged;
+        }
+
+        /// サーバーがこのプレイヤーの担当ボールを設定する（NetworkSpawner から呼ぶ）。
+        [Server]
+        public void SetAssignedBall(NetworkObject ball)
+        {
+            assignedBall.Value = ball;
+        }
+
+        private void OnAssignedBallChanged(NetworkObject prev, NetworkObject next, bool asServer)
+        {
+            ApplyBallOwnership();
+        }
+
+        /// 自分が操作しているプレイヤーの担当ボールだけ、透過シルエットを出す。
+        /// 各クライアントで所有プレイヤーは1人なので、結果として自分のボール1個だけが光る。
+        private void ApplyBallOwnership()
+        {
+            if (!IsOwner)
+            {
+                return;
+            }
+            NetworkObject ballObject = assignedBall.Value;
+            if (ballObject == null)
+            {
+                return;
+            }
+
+            // この端末で光らせるのは担当ボール1個だけ。他は明示的に落とす。
+            // そうしないとプレハブの初期値や再割り当ての取りこぼしで複数のボールが光ってしまい、
+            // 「どれが自分のボールか」という透過表示の意味が失われる。
+            GolfBall mine = ballObject.GetComponent<GolfBall>();
+            foreach (GolfBall ball in FindObjectsByType<GolfBall>(FindObjectsSortMode.None))
+            {
+                ball.SetOwnedByLocalPlayer(ball == mine);
+            }
         }
 
         public override void OnStartClient()
@@ -34,6 +77,8 @@ namespace GolfEight.Network
             ApplyOwnership();
             // 壁を実際に壊すのはサーバーだけ。他端末は下の BroadcastWallDamage を受けて同じ破壊を再生する。
             ragdollController.WallDamageAuthority = IsServerStarted;
+            // 割り当てが既に届いている場合はここで反映（届いていなければ OnChange 側で反映される）
+            ApplyBallOwnership();
         }
 
         public override void OnOwnershipClient(NetworkConnection prevOwner)
@@ -95,6 +140,16 @@ namespace GolfEight.Network
             {
                 return;
             }
+
+            // 打てる状態かはサーバー側で必ず検証する。
+            // クライアントのボールは kinematic で物理が回っていないため IsMoving が常に「止まっている」を返し、
+            // 実際にはサーバー上で飛行中のボールでもクライアントからは打ててしまうため
+            //（BallHitController の onlyHitRestingBall だけに任せられない）。
+            if (ball.IsHoled || ball.IsMoving)
+            {
+                return;
+            }
+
             RagdollController selfRagdoll = GetComponent<RagdollController>();
             ball.Hit(direction, power, selfRagdoll);
         }

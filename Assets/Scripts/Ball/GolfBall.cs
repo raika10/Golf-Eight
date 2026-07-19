@@ -59,6 +59,13 @@ public class GolfBall : MonoBehaviour
     /// プレイヤーに衝突した瞬間に発火する（衝突相手, 相対速度）。ネットワーク同期用のフック。
     public event System.Action<RagdollController, Vector3> OnPlayerImpact;
 
+    /// この端末がこのボールの物理・状態を決める権威を持つか（サーバー）。BallNetworkSync が設定する。
+    /// false の端末は停止判定・場外リスポーン・衝突による効果を一切行わず、
+    /// NetworkTransform が運んでくる位置に従うだけにする。
+    /// これを守らないと、たとえば場外リスポーンの Unfreeze() がクライアント側で kinematic を解除してしまい、
+    /// クライアントが独自に物理を回してサーバーとズレる。単体（非ネットワーク）では true のままなので従来どおり動く。
+    public bool StateAuthority { get; set; } = true;
+
     /// このボールがローカル操作者のものか。
     public bool OwnedByLocalPlayer => ownedByLocalPlayer;
 
@@ -131,6 +138,13 @@ public class GolfBall : MonoBehaviour
 
     private void Update()
     {
+        // 停止判定も場外リスポーンも「ボールの状態を書き換える」処理なので、権威を持つ端末だけが行う。
+        // 権威の無い端末（クライアント）では位置は NetworkTransform が運ぶので、ここで触ってはいけない。
+        if (!StateAuthority)
+        {
+            return;
+        }
+
         UpdateStopState();
 
         // 場外チェック：下に落ちたら「打球した場所」へリスポーン（未打球なら初期位置）
@@ -214,10 +228,9 @@ public class GolfBall : MonoBehaviour
             if (wall != null && collision.relativeVelocity.magnitude >= wallBreakMinSpeed)
             {
                 ContactPoint contact = collision.GetContact(0);
-                // 壁破壊はサーバー権威のボール（isKinematic=falseの実物理コピー）だけが実行する。
-                // クライアント側のボール（isKinematic=true）でこの衝突が発生しても、ここでは何もしない
+                // 壁破壊は権威を持つ端末（サーバー）だけが実行する。クライアント側でこの衝突が起きても何もしない
                 // （BallNetworkSyncがサーバーからのブロードキャストを受けて各クライアントでも同じ破壊を再生する）。
-                if (!body.isKinematic)
+                if (StateAuthority)
                 {
                     // 衝突直前の速度で破片を進行方向へ飛ばす（跳ね返り後の relativeVelocity ではなく実測の入射速度）。
                     wall.TakeDamage(wallDamage, contact.point, lastVelocity);
@@ -251,8 +264,8 @@ public class GolfBall : MonoBehaviour
         {
             return;
         }
-        // 吹っ飛ばしもサーバー権威のボールだけが実行し、他クライアントへはBallNetworkSyncが同期する。
-        if (!body.isKinematic)
+        // 吹っ飛ばしも権威を持つ端末だけが実行し、他クライアントへはBallNetworkSyncが同期する。
+        if (StateAuthority)
         {
             rc.ApplyBallImpact(collision.relativeVelocity);
             OnPlayerImpact?.Invoke(rc, collision.relativeVelocity);

@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using FishNet;
 using FishNet.Connection;
+using FishNet.Object;
 using FishNet.Transporting;
 using UnityEngine;
 
@@ -21,6 +23,10 @@ namespace GolfEight.Network
 
         // 次に接続してきたプレイヤーへ割り当てるスタート地点のインデックス（サーバー側だけで進む＝権威）。
         private int nextPlayerSpawnIndex;
+
+        // スポーン済みのボール。接続してきたプレイヤーへ順に「担当ボール」として割り当てる
+        //（自分のボールを見分ける透過シルエット用。誰でも誰のボールを打てる仕様自体は変えない）。
+        private readonly List<NetworkObject> spawnedBalls = new List<NetworkObject>();
 
         // Start（Awakeの後）で購読する。OnEnable だとシーン内の初期化順によっては
         // NetworkManager がまだ InstanceFinder に登録されておらず取得できないことがあるため。
@@ -77,6 +83,12 @@ namespace GolfEight.Network
                 }
                 GameObject ball = Instantiate(ballPrefab, point.position, point.rotation);
                 InstanceFinder.ServerManager.Spawn(ball);
+
+                NetworkObject ballObject = ball.GetComponent<NetworkObject>();
+                if (ballObject != null)
+                {
+                    spawnedBalls.Add(ballObject);
+                }
             }
         }
 
@@ -88,9 +100,12 @@ namespace GolfEight.Network
                 return;
             }
 
-            // 接続順に別々のスタート地点を割り当てる。地点が足りなければ先頭から巡回して使い回す。
-            Transform start = playerStartPoints[nextPlayerSpawnIndex % playerStartPoints.Length];
+            // 何人目の接続かを確定させ、スタート地点とボールの両方の割り当てに使う。
+            int playerIndex = nextPlayerSpawnIndex;
             nextPlayerSpawnIndex++;
+
+            // 接続順に別々のスタート地点を割り当てる。地点が足りなければ先頭から巡回して使い回す。
+            Transform start = playerStartPoints[playerIndex % playerStartPoints.Length];
             if (start == null)
             {
                 Debug.LogWarning("[NetworkSpawner] playerStartPoints の要素に未設定(null)があります。", this);
@@ -99,6 +114,28 @@ namespace GolfEight.Network
 
             GameObject player = Instantiate(playerPrefab, start.position, start.rotation);
             InstanceFinder.ServerManager.Spawn(player, conn);
+
+            AssignBallToPlayer(player, playerIndex);
+        }
+
+        /// 接続順に応じた担当ボールをプレイヤーへ割り当てる。
+        /// 用途は「自分のボールを見分ける透過シルエット」で、打てるボールを制限するものではない。
+        private void AssignBallToPlayer(GameObject player, int playerIndex)
+        {
+            if (spawnedBalls.Count == 0)
+            {
+                return;
+            }
+            PlayerNetworkSync sync = player.GetComponent<PlayerNetworkSync>();
+            if (sync == null)
+            {
+                return;
+            }
+            NetworkObject ball = spawnedBalls[playerIndex % spawnedBalls.Count];
+            if (ball != null)
+            {
+                sync.SetAssignedBall(ball);
+            }
         }
     }
 }
