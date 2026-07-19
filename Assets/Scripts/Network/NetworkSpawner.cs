@@ -6,7 +6,8 @@ using UnityEngine;
 namespace GolfEight.Network
 {
     /// サーバー専用のスポーン係。サーバー起動時にボールを、クライアント接続ごとにプレイヤーをスポーンする。
-    /// 全員同じ位置からスタートする仕様（ONLINE_DESIGN.md）に合わせ、プレイヤーのスタート地点は1つだけ持つ。
+    /// プレイヤーは接続してきた順に別々のスタート地点へ配置する（net-player-spawn）。
+    /// 割り当ての判断はサーバー側だけで行うので、クライアントが自分の位置を決めることはない。
     public class NetworkSpawner : MonoBehaviour
     {
         [Header("ボール")]
