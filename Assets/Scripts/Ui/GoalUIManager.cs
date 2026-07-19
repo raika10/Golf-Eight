@@ -6,6 +6,7 @@ public class GoalUIManager : MonoBehaviour
 {
     public GameObject goalPanel;
     public TMP_Text goalText;
+    public PlayerController playerController;
 
     void Start()
     {
@@ -17,6 +18,10 @@ public class GoalUIManager : MonoBehaviour
     {
         goalPanel.SetActive(true);
         goalText.text = "ゴール！！";
+
+        // ゴール時にプレイヤーを動けなくする
+        if (playerController != null)
+            playerController.SetActionLocked(true);
     }
 
     public void OnNextMatch()

@@ -6,29 +6,26 @@ public class CountdownUI : MonoBehaviour
 {
     public TMP_Text countdownText;
     public TimerUI timerUI;
+    public PlayerController playerController;
 
-    void Start()
-    {
-        StartCoroutine(PlayCountdown());
-    }
+    void Start() { StartCoroutine(PlayCountdown()); }
 
     IEnumerator PlayCountdown()
     {
-        countdownText.text = "3";
-        yield return new WaitForSeconds(1f);
+        // カウントダウン中はプレイヤーを動けなくする
+        if (playerController != null)
+            playerController.SetActionLocked(true);
 
-        countdownText.text = "2";
-        yield return new WaitForSeconds(1f);
-
-        countdownText.text = "1";
-        yield return new WaitForSeconds(1f);
-
-        countdownText.text = "Start!";
-        yield return new WaitForSeconds(1f);
-
+        countdownText.text = "3"; yield return new WaitForSeconds(1f);
+        countdownText.text = "2"; yield return new WaitForSeconds(1f);
+        countdownText.text = "1"; yield return new WaitForSeconds(1f);
+        countdownText.text = "Start!"; yield return new WaitForSeconds(1f);
         countdownText.text = "";
 
-        // カウントダウンが終わったらタイマーを開始
+        // カウントダウン終了後に動けるようにする
+        if (playerController != null)
+            playerController.SetActionLocked(false);
+
         timerUI.StartTimer();
     }
 }

@@ -211,10 +211,18 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 6383174146386499853, guid: bce118d480e1d844696932c518ebf646, type: 3}
+      propertyPath: playerController
+      value: 
+      objectReference: {fileID: 1679859970}
     - target: {fileID: 8474524957772144336, guid: bce118d480e1d844696932c518ebf646, type: 3}
       propertyPath: playerTransform
       value: 
       objectReference: {fileID: 1679859969}
+    - target: {fileID: 8836237948010639289, guid: bce118d480e1d844696932c518ebf646, type: 3}
+      propertyPath: playerController
+      value: 
+      objectReference: {fileID: 1679859970}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects:
@@ -324,6 +332,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::GoalUIManager
   goalPanel: {fileID: 1240742765}
   goalText: {fileID: 1522717390}
+  playerController: {fileID: 1679859970}
 --- !u!224 &803628123 stripped
 RectTransform:
   m_CorrespondingSourceObject: {fileID: 4142901515777274863, guid: bce118d480e1d844696932c518ebf646, type: 3}
@@ -1123,6 +1132,17 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 9164351195057096949, guid: d055062e6e899ef4c9de12f726d6b149, type: 3}
   m_PrefabInstance: {fileID: 1679859968}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &1679859970 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 8034418580966928987, guid: d055062e6e899ef4c9de12f726d6b149, type: 3}
+  m_PrefabInstance: {fileID: 1679859968}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 347781837}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f1e2d3c4b5a6978869504132a3b4c5d6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerController
 --- !u!1 &1700845622
 GameObject:
   m_ObjectHideFlags: 0

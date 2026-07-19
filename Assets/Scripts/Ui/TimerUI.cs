@@ -4,10 +4,11 @@ using TMPro;
 public class TimerUI : MonoBehaviour
 {
     public TMP_Text timerText;
-    public float timeLimit = 300f;    // 制限時間（秒）デフォルト5分
-    public Color normalColor = Color.white;   // 通常時の色
-    public Color warningColor = Color.red;    // 残り30秒の色
-    public float warningTime = 30f;           // 警告を出す残り時間
+    public float timeLimit = 300f;
+    public Color normalColor = Color.white;
+    public Color warningColor = Color.red;
+    public float warningTime = 30f;
+    public PlayerController playerController;
 
     private float remainingTime;
     private bool isRunning = false;
@@ -35,17 +36,20 @@ public class TimerUI : MonoBehaviour
 
         remainingTime -= Time.deltaTime;
 
-        // 残り時間が0になったらタイムアップ
         if (remainingTime <= 0f)
         {
             remainingTime = 0f;
             isRunning = false;
             timerText.text = "Time Up!";
             timerText.color = warningColor;
+
+            // タイムアップ後にプレイヤーを動けなくする
+            if (playerController != null)
+                playerController.SetActionLocked(true);
+
             return;
         }
 
-        // 残り30秒以下で赤くなる
         if (remainingTime <= warningTime)
         {
             timerText.color = warningColor;
