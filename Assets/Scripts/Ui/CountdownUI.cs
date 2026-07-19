@@ -24,9 +24,19 @@ public class CountdownUI : MonoBehaviour
         countdownText.text = "Start!"; yield return new WaitForSeconds(1f);
         countdownText.text = "";
 
-        // カウントダウン終了後に動けるようにする
-        if (target != null)
-            target.SetActionLocked(false);
+        // カウントダウン終了後に動けるようにする。
+        // ただしオンラインでは「動いてよいか」はゲーム状態が唯一の正なので、GameManager に判断を委ねる。
+        // ここで無条件に解除すると、演出の長さ(4秒固定)と GameManager.countdownDuration がズレたときに、
+        // 既に終了した試合のロックまで勝手に解除してしまう。
+        var gameManager = FindFirstObjectByType<GolfEight.Network.GameManager>();
+        if (gameManager != null)
+        {
+            gameManager.ApplyLocalPlayerInputLock();
+        }
+        else if (target != null)
+        {
+            target.SetActionLocked(false); // 単体（非ネットワーク）シーン用
+        }
 
         timerUI.StartTimer();
     }

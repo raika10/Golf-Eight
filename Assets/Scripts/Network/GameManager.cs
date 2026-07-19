@@ -17,6 +17,14 @@ namespace GolfEight.Network
             Finished,
         }
 
+        /// ゲームが終わった理由。表示を出し分けるために使う
+        /// （時間切れなのに「ゴール！！」と出ると誰かが決めたように見えてしまうため）。
+        public enum FinishReason
+        {
+            Goal,
+            TimeUp,
+        }
+
         [Header("時間")]
         [SerializeField] private float gameTimeLimit = 300f;   // 制限時間（秒）
         [SerializeField] private float countdownDuration = 4f; // CountdownUI の "3","2","1","Start!" 分（秒）。CountdownUI 自体は変更せず、サーバーの待ち時間をこれに合わせる
@@ -132,7 +140,7 @@ namespace GolfEight.Network
 
             if (state.Value == GameState.Playing)
             {
-                FinishGame();
+                FinishGame(FinishReason.TimeUp);
             }
         }
 
@@ -142,31 +150,37 @@ namespace GolfEight.Network
             {
                 return;
             }
-            FinishGame();
+            FinishGame(FinishReason.Goal);
         }
 
         [Server]
-        private void FinishGame()
+        private void FinishGame(FinishReason reason)
         {
             state.Value = GameState.Finished;
             StopTimer_ObserversRpc();
-            ShowGoal_ObserversRpc();
+            ShowResult_ObserversRpc(reason);
         }
 
-        /// ゴール表示を全クライアントへ配る。
+        /// 決着表示を全クライアントへ配る。
         /// カップイン判定はサーバーでしか走らない（クライアントのボールは kinematic）ため、
-        /// これが無いとホストの画面にしかゴールUIが出ない。
+        /// これが無いとホストの画面にしか結果が出ない。
+        /// サーバーも除外しない：時間切れの場合サーバーは GolfHole を通らず、
+        /// 除外するとホストだけ何も表示されなくなる。表示処理は何度呼んでも同じ結果になる。
         [ObserversRpc]
-        private void ShowGoal_ObserversRpc()
+        private void ShowResult_ObserversRpc(FinishReason reason)
         {
-            if (IsServerStarted)
-            {
-                return; // サーバーは GolfHole から直接 GoalUIManager が呼ばれて表示済み
-            }
             GoalUIManager goalUI = FindFirstObjectByType<GoalUIManager>();
-            if (goalUI != null)
+            if (goalUI == null)
+            {
+                return;
+            }
+            if (reason == FinishReason.Goal)
             {
                 goalUI.ShowGoal();
+            }
+            else
+            {
+                goalUI.ShowTimeUp();
             }
         }
 

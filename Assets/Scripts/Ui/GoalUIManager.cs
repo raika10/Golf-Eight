@@ -26,12 +26,25 @@ public class GoalUIManager : MonoBehaviour
     /// 他クライアントに対しては GameManager が ObserversRpc からこれを呼ぶ。
     public void ShowGoal()
     {
+        ShowResult("ゴール！！");
+    }
+
+    /// 制限時間切れの表示を出す。誰もカップインしていないので「ゴール」とは出し分ける。
+    public void ShowTimeUp()
+    {
+        ShowResult("タイムアップ");
+    }
+
+    /// 決着時の共通表示。何度呼ばれても同じ結果になる（サーバーは GolfHole 経由と
+    /// GameManager の配信の両方から呼ばれうるため）。
+    private void ShowResult(string message)
+    {
         if (goalPanel != null)
             goalPanel.SetActive(true);
         if (goalText != null)
-            goalText.text = "ゴール！！";
+            goalText.text = message;
 
-        // ゴール時にプレイヤーを動けなくする
+        // 決着後はプレイヤーを動けなくする
         PlayerController target = ResolvePlayerController();
         if (target != null)
             target.SetActionLocked(true);
