@@ -50,5 +50,97 @@ namespace GolfEight.Network
                 playerAudioListener.enabled = IsOwner;
             }
         }
+
+        // ── net-ball-hit：スイング操作をサーバー権威にする ──────────────────────
+        // BallHitController（ローカル操作者のクライアントでしか動かない）はここを経由してサーバーに依頼する。
+        // GolfBall/MazeWall/RagdollController 自体はFishNetを知らない既存スクリプトのまま。
+
+        /// ボールを打つ（GolfBall.Hit）。サーバーの実体だけが物理を実行し、結果はNetworkTransformで自動同期される。
+        [ServerRpc]
+        public void RequestHitBall(NetworkObject ballObject, Vector3 direction, float power)
+        {
+            if (ballObject == null)
+            {
+                return;
+            }
+            GolfBall ball = ballObject.GetComponent<GolfBall>();
+            if (ball == null)
+            {
+                return;
+            }
+            RagdollController selfRagdoll = GetComponent<RagdollController>();
+            ball.Hit(direction, power, selfRagdoll);
+        }
+
+        /// スイングで前方の壁を壊す（MazeWall.TakeDamage）。壁はNetworkObjectではないため名前をキーに同期する。
+        [ServerRpc]
+        public void RequestBreakWall(string wallName, int damage, Vector3 impactPoint, Vector3 impactVelocity)
+        {
+            MazeWall wall = MazeNetworkSync.FindWallByName(wallName);
+            if (wall == null)
+            {
+                return;
+            }
+            wall.TakeDamage(damage, impactPoint, impactVelocity);
+            BroadcastWallDamage(wallName, damage, impactPoint, impactVelocity);
+        }
+
+        [ObserversRpc]
+        private void BroadcastWallDamage(string wallName, int damage, Vector3 impactPoint, Vector3 impactVelocity)
+        {
+            if (IsServerStarted)
+            {
+                return; // サーバー自身は上のRequestBreakWallで既に適用済み
+            }
+            MazeWall wall = MazeNetworkSync.FindWallByName(wallName);
+            if (wall != null)
+            {
+                wall.TakeDamage(damage, impactPoint, impactVelocity);
+            }
+        }
+
+        /// スイングで相手プレイヤーを吹っ飛ばす（IKnockbackable/RagdollController.Fling）。
+        [ServerRpc]
+        public void RequestFlingPlayer(NetworkObject targetPlayer, Vector3 direction, float power)
+        {
+            if (targetPlayer == null)
+            {
+                return;
+            }
+            RagdollController rc = targetPlayer.GetComponent<RagdollController>();
+            if (rc == null || rc.IsDown)
+            {
+                return;
+            }
+            ApplyFling(rc, direction, power);
+            BroadcastPlayerFling(targetPlayer, direction, power);
+        }
+
+        [ObserversRpc]
+        private void BroadcastPlayerFling(NetworkObject targetPlayer, Vector3 direction, float power)
+        {
+            if (IsServerStarted || targetPlayer == null)
+            {
+                return; // サーバー自身は上のRequestFlingPlayerで既に適用済み
+            }
+            RagdollController rc = targetPlayer.GetComponent<RagdollController>();
+            if (rc != null && !rc.IsDown)
+            {
+                ApplyFling(rc, direction, power);
+            }
+        }
+
+        private static void ApplyFling(RagdollController rc, Vector3 direction, float power)
+        {
+            IKnockbackable knockable = rc.GetComponent<IKnockbackable>();
+            if (knockable != null)
+            {
+                knockable.ApplyKnockback(direction, power);
+            }
+            else
+            {
+                rc.Fling(direction * power);
+            }
+        }
     }
 }

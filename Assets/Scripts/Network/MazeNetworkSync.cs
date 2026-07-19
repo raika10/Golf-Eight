@@ -32,5 +32,25 @@ namespace GolfEight.Network
             mazeGenerator.seed = seed.Value;
             mazeGenerator.GenerateMaze();
         }
+
+        /// 名前（MazeGenerator が付ける "HWall_x_y" / "VWall_x_y"）で壁を探す。
+        /// 迷路はNetworkObjectではなく各クライアントが同じシードから独立生成しているため、
+        /// 壁の破壊を同期する際はインスタンス参照ではなく名前をキーにする。
+        public static MazeWall FindWallByName(string wallName)
+        {
+            if (string.IsNullOrEmpty(wallName))
+            {
+                return null;
+            }
+            MazeWall[] walls = Object.FindObjectsByType<MazeWall>(FindObjectsSortMode.None);
+            foreach (MazeWall wall in walls)
+            {
+                if (wall.gameObject.name == wallName)
+                {
+                    return wall;
+                }
+            }
+            return null;
+        }
     }
 }

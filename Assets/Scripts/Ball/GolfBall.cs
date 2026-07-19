@@ -52,6 +52,13 @@ public class GolfBall : MonoBehaviour
     private bool hasHitPosition;            // 一度でも打たれたか
     private Vector3 initialPosition;        // 初期位置（まだ打たれていない時のリスポーン先）
 
+    /// 壁を壊した瞬間に発火する（壁, ダメージ, 衝撃点, 衝撃速度）。ネットワーク同期用のフックで、
+    /// GolfBall自体はFishNetを一切参照しない（BallNetworkSyncが購読して同期する）。
+    public event System.Action<MazeWall, int, Vector3, Vector3> OnWallDamaged;
+
+    /// プレイヤーに衝突した瞬間に発火する（衝突相手, 相対速度）。ネットワーク同期用のフック。
+    public event System.Action<RagdollController, Vector3> OnPlayerImpact;
+
     /// このボールがローカル操作者のものか。
     public bool OwnedByLocalPlayer => ownedByLocalPlayer;
 
@@ -207,8 +214,15 @@ public class GolfBall : MonoBehaviour
             if (wall != null && collision.relativeVelocity.magnitude >= wallBreakMinSpeed)
             {
                 ContactPoint contact = collision.GetContact(0);
-                // 衝突直前の速度で破片を進行方向へ飛ばす（跳ね返り後の relativeVelocity ではなく実測の入射速度）。
-                wall.TakeDamage(wallDamage, contact.point, lastVelocity);
+                // 壁破壊はサーバー権威のボール（isKinematic=falseの実物理コピー）だけが実行する。
+                // クライアント側のボール（isKinematic=true）でこの衝突が発生しても、ここでは何もしない
+                // （BallNetworkSyncがサーバーからのブロードキャストを受けて各クライアントでも同じ破壊を再生する）。
+                if (!body.isKinematic)
+                {
+                    // 衝突直前の速度で破片を進行方向へ飛ばす（跳ね返り後の relativeVelocity ではなく実測の入射速度）。
+                    wall.TakeDamage(wallDamage, contact.point, lastVelocity);
+                    OnWallDamaged?.Invoke(wall, wallDamage, contact.point, lastVelocity);
+                }
 
                 // 跳ね返りを打ち消して貫通させる。物理ソルバが既に反発の速度を入れているので、
                 // 衝突直前の速度を元に「進行方向へ通り抜ける速度」で上書きする。
@@ -237,7 +251,12 @@ public class GolfBall : MonoBehaviour
         {
             return;
         }
-        rc.ApplyBallImpact(collision.relativeVelocity);
+        // 吹っ飛ばしもサーバー権威のボールだけが実行し、他クライアントへはBallNetworkSyncが同期する。
+        if (!body.isKinematic)
+        {
+            rc.ApplyBallImpact(collision.relativeVelocity);
+            OnPlayerImpact?.Invoke(rc, collision.relativeVelocity);
+        }
     }
 
     /// カップインしたときに呼ぶ。速度を消してその場に固定し、以降は打てなくする。
