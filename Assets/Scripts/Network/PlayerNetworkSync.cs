@@ -32,12 +32,33 @@ namespace GolfEight.Network
         {
             base.OnStartClient();
             ApplyOwnership();
+            // 壁を実際に壊すのはサーバーだけ。他端末は下の BroadcastWallDamage を受けて同じ破壊を再生する。
+            ragdollController.WallDamageAuthority = IsServerStarted;
         }
 
         public override void OnOwnershipClient(NetworkConnection prevOwner)
         {
             base.OnOwnershipClient(prevOwner);
             ApplyOwnership();
+        }
+
+        public override void OnStartServer()
+        {
+            base.OnStartServer();
+            // ラグドール由来（飛行中の貫通・着地後の骨の衝突）の壁破壊をサーバーで受け取り、全員へ配信する。
+            ragdollController.WallDamageAuthority = true;
+            ragdollController.OnWallDamaged += HandleRagdollWallDamaged;
+        }
+
+        public override void OnStopServer()
+        {
+            base.OnStopServer();
+            ragdollController.OnWallDamaged -= HandleRagdollWallDamaged;
+        }
+
+        private void HandleRagdollWallDamaged(MazeWall wall, int damage, Vector3 impactPoint, Vector3 impactVelocity)
+        {
+            BroadcastWallDamage(wall.name, damage, impactPoint, impactVelocity);
         }
 
         private void ApplyOwnership()

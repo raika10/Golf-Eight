@@ -78,6 +78,28 @@ public class RagdollController : MonoBehaviour
     /// PlayerNetworkSync が IsOwner に応じて設定する。単体（非ネットワーク）では常に false のまま。
     public bool NetworkRemote { get; set; }
 
+    /// この端末で壁の破壊を実際に適用してよいか（サーバー権威）。PlayerNetworkSync が設定する。
+    /// false の端末は自分では壊さず、サーバーからの配信を受けて同じ破壊を再生する。
+    /// 単体（非ネットワーク）では true のままなので従来どおり動く。
+    public bool WallDamageAuthority { get; set; } = true;
+
+    /// ラグドール由来で壁を壊した瞬間に発火する（壁, ダメージ, 衝撃点, 衝撃速度）。
+    /// PlayerNetworkSync が購読して全クライアントへ配信する。RagdollController 自体は FishNet を知らない。
+    public event System.Action<MazeWall, int, Vector3, Vector3> OnWallDamaged;
+
+    /// ラグドール（飛行中の貫通・着地後の骨の衝突）が壁を壊すときの唯一の窓口。
+    /// 権威を持つ端末だけが実際に削り、その結果をイベントで通知する。
+    /// これを通さずに MazeWall.TakeDamage を直接呼ぶと、各端末が独立に壊して迷路の形が食い違う。
+    public void ReportWallDamage(MazeWall wall, int damage, Vector3 impactPoint, Vector3 impactVelocity)
+    {
+        if (wall == null || !WallDamageAuthority)
+        {
+            return;
+        }
+        wall.TakeDamage(damage, impactPoint, impactVelocity);
+        OnWallDamaged?.Invoke(wall, damage, impactPoint, impactVelocity);
+    }
+
     private void Awake()
     {
         cc = GetComponent<CharacterController>();
