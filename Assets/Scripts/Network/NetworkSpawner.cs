@@ -15,7 +15,11 @@ namespace GolfEight.Network
 
         [Header("プレイヤー")]
         [SerializeField] private GameObject playerPrefab;
-        [SerializeField] private Transform playerStartPoint;
+        [Tooltip("プレイヤーのスタート地点。接続してきた順に別々の地点へ割り当てる（net-player-spawn）。\n人数より地点が少ない場合は先頭から巡回して使い回す。")]
+        [SerializeField] private Transform[] playerStartPoints;
+
+        // 次に接続してきたプレイヤーへ割り当てるスタート地点のインデックス（サーバー側だけで進む＝権威）。
+        private int nextPlayerSpawnIndex;
 
         // Start（Awakeの後）で購読する。OnEnable だとシーン内の初期化順によっては
         // NetworkManager がまだ InstanceFinder に登録されておらず取得できないことがあるため。
@@ -77,12 +81,22 @@ namespace GolfEight.Network
 
         private void SpawnPlayer(NetworkConnection conn)
         {
-            if (playerPrefab == null || playerStartPoint == null)
+            if (playerPrefab == null || playerStartPoints == null || playerStartPoints.Length == 0)
             {
-                Debug.LogWarning("[NetworkSpawner] playerPrefab / playerStartPoint が未設定です。", this);
+                Debug.LogWarning("[NetworkSpawner] playerPrefab / playerStartPoints が未設定です。", this);
                 return;
             }
-            GameObject player = Instantiate(playerPrefab, playerStartPoint.position, playerStartPoint.rotation);
+
+            // 接続順に別々のスタート地点を割り当てる。地点が足りなければ先頭から巡回して使い回す。
+            Transform start = playerStartPoints[nextPlayerSpawnIndex % playerStartPoints.Length];
+            nextPlayerSpawnIndex++;
+            if (start == null)
+            {
+                Debug.LogWarning("[NetworkSpawner] playerStartPoints の要素に未設定(null)があります。", this);
+                return;
+            }
+
+            GameObject player = Instantiate(playerPrefab, start.position, start.rotation);
             InstanceFinder.ServerManager.Spawn(player, conn);
         }
     }
