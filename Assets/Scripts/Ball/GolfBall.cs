@@ -73,7 +73,19 @@ public class GolfBall : MonoBehaviour
     public bool IsHoled { get; private set; }
 
     /// いま動いているか（「止まっている球だけ打てる」判定などに使う）。
-    public bool IsMoving => slowTimer < stopDuration;
+    /// 権威のある端末（サーバー・単体）は自前の物理から判定する。
+    /// 権威の無い端末はボールが kinematic で物理が回らず slowTimer が動かないため、
+    /// 自前判定が当てにならない。そこで権威側から同期された値を使う。
+    public bool IsMoving => StateAuthority ? slowTimer < stopDuration : networkIsMoving;
+
+    // 権威側が判定した「動いているか」。BallNetworkSync が同期して設定する。
+    private bool networkIsMoving;
+
+    /// 権威側の「動いているか」を反映する（BallNetworkSync から呼ぶ）。
+    public void SetNetworkIsMoving(bool moving)
+    {
+        networkIsMoving = moving;
+    }
 
     /// 現在の質量（打った強さから初速を見積もるときに使う）。
     public float Mass => body != null ? body.mass : 1f;

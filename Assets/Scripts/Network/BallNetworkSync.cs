@@ -1,4 +1,5 @@
 using FishNet.Object;
+using FishNet.Object.Synchronizing;
 using UnityEngine;
 
 namespace GolfEight.Network
@@ -17,10 +18,35 @@ namespace GolfEight.Network
         private Rigidbody body;
         private GolfBall ball;
 
+        // サーバーが判定した「ボールが動いているか」。
+        // クライアントのボールは kinematic で物理が回らないため自前では判定できず、
+        // これが無いと「止まっている球だけ打てる」判定が常に成立せず打てなくなる。
+        private readonly SyncVar<bool> syncedIsMoving = new SyncVar<bool>();
+
         private void Awake()
         {
             body = GetComponent<Rigidbody>();
             ball = GetComponent<GolfBall>();
+            syncedIsMoving.OnChange += OnIsMovingChanged;
+        }
+
+        private void OnIsMovingChanged(bool prev, bool next, bool asServer)
+        {
+            ball.SetNetworkIsMoving(next);
+        }
+
+        private void Update()
+        {
+            // 権威側だけが判定を進め、変化したときだけ配る（SyncVar は同値なら送信しない）。
+            if (!IsServerStarted)
+            {
+                return;
+            }
+            bool moving = ball.IsMoving;
+            if (syncedIsMoving.Value != moving)
+            {
+                syncedIsMoving.Value = moving;
+            }
         }
 
         public override void OnStartClient()
@@ -33,6 +59,8 @@ namespace GolfEight.Network
             {
                 body.isKinematic = true;
             }
+            // 接続時点の値を反映しておく（以降の変化は OnChange で届く）
+            ball.SetNetworkIsMoving(syncedIsMoving.Value);
         }
 
         public override void OnStartServer()
