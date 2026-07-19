@@ -32,6 +32,16 @@ public class RagdollController : MonoBehaviour
     [SerializeField] private Key testFlingKey = Key.R;        // このキーで吹っ飛ぶ
     [SerializeField] private float testFlingSpeed = 9f;       // 吹っ飛ぶ勢い (m/s)
 
+    [Header("関節の剛性（吹っ飛び時の伸び対策）")]
+    [Tooltip("骨の関節(CharacterJoint)に projection を効かせ、一定以上離れた骨をスナップして繋ぎ止める。\nネットワーク越しで手足がビヨーンと伸びるのを抑える")]
+    [SerializeField] private bool strengthenJoints = true;
+    [Tooltip("骨がこの距離(m)以上ずれたら関節が引き戻す。小さいほど伸びに厳しい")]
+    [SerializeField] private float jointProjectionDistance = 0.05f;
+    [Tooltip("骨がこの角度(度)以上ずれたら関節が引き戻す")]
+    [SerializeField] private float jointProjectionAngle = 20f;
+    [Tooltip("各骨のソルバー反復回数。多いほど関節が剛直になり伸びにくい（重くなる）")]
+    [SerializeField] private int boneSolverIterations = 20;
+
     private static readonly RaycastHit[] groundHits = new RaycastHit[16];
 
     private CharacterController cc;
@@ -117,6 +127,23 @@ public class RagdollController : MonoBehaviour
             if (bones[i].GetComponent<RagdollBoneWallBreaker>() == null)
             {
                 bones[i].gameObject.AddComponent<RagdollBoneWallBreaker>();
+            }
+
+            // 関節を剛直にして「伸び」を抑える。projection は骨が一定以上離れると強制的に引き戻すので、
+            // ネットワーク越しに手足がビヨーンと伸びる（関節が引き伸ばされる）のを物理側で潰せる。
+            if (strengthenJoints)
+            {
+                CharacterJoint joint = bones[i].GetComponent<CharacterJoint>();
+                if (joint != null)
+                {
+                    joint.enableProjection = true;
+                    joint.projectionDistance = jointProjectionDistance;
+                    joint.projectionAngle = jointProjectionAngle;
+                    joint.enablePreprocessing = false; // プリプロセスを切ると引き伸ばし時の挙動が安定する
+                }
+                // ソルバー反復を増やすと関節がより硬く保たれ、伸びにくくなる
+                bones[i].solverIterations = boneSolverIterations;
+                bones[i].solverVelocityIterations = boneSolverIterations;
             }
         }
         // 骨の中で最上位（親を辿って最初に見つかるRigidbody）を hips とみなす
