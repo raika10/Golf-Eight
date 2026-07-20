@@ -12,22 +12,94 @@ public class GoalUIManager : MonoBehaviour
 
     void Start()
     {
-        goalPanel.SetActive(false);
+        if (goalPanel != null)
+            goalPanel.SetActive(false);
     }
 
     // GolfHoleのonBallHoledから呼ばれる
     public void OnBallHoled(GolfBall ball)
     {
-        goalPanel.SetActive(true);
-        goalText.text = "ゴール！！";
+        // オンラインでは GameManager が勝者を判定して全員へ配るので、ここでは何もしない。
+        // 両方走らせると、先に「ゴール！！」が出てから勝者表示で上書きされてちらつく。
+        if (FindFirstObjectByType<GolfEight.Network.GameManager>() != null)
+        {
+            return;
+        }
+        ShowGoal();
+    }
 
-        // ゴール時にプレイヤーを動けなくする
-        if (playerController != null)
-            playerController.SetActionLocked(true);
+    /// ゴール表示を出す。オンラインではカップイン判定がサーバーでしか走らないため、
+    /// 他クライアントに対しては GameManager が ObserversRpc からこれを呼ぶ。
+    public void ShowGoal()
+    {
+        ShowResult("ゴール！！");
+    }
+
+    /// 勝者を表示する。勝者はカップインしたボールの持ち主。
+    /// winnerIndex が負なら持ち主を特定できなかった場合なので、単に「ゴール！！」に留める。
+    public void ShowWinner(int winnerIndex)
+    {
+        if (winnerIndex < 0)
+        {
+            ShowGoal();
+            return;
+        }
+        ShowResult(GolfEight.Network.PlayerColors.GetDisplayName(winnerIndex) + " の勝ち！",
+                   GolfEight.Network.PlayerColors.Get(winnerIndex));
+    }
+
+    /// 制限時間切れの表示を出す。誰もカップインしていないので「ゴール」とは出し分ける。
+    public void ShowTimeUp()
+    {
+        ShowResult("タイムアップ");
+    }
+
+    /// 決着表示を消してロビー状態に戻す（再戦時に GameManager から呼ぶ）。
+    /// 行動ロックはゲーム状態が決めるので、ここでは解除しない。
+    public void HideResult()
+    {
+        if (goalPanel != null)
+            goalPanel.SetActive(false);
+    }
+
+    /// 決着時の共通表示。何度呼ばれても同じ結果になる（サーバーは GolfHole 経由と
+    /// GameManager の配信の両方から呼ばれうるため）。
+    /// color を渡すと文字色を勝者の色に合わせる（渡さなければ白）。
+    private void ShowResult(string message, Color? color = null)
+    {
+        if (goalPanel != null)
+            goalPanel.SetActive(true);
+        if (goalText != null)
+        {
+            goalText.text = message;
+            goalText.color = color ?? Color.white;
+        }
+
+        // 決着後はプレイヤーを動けなくする
+        PlayerController target = ResolvePlayerController();
+        if (target != null)
+            target.SetActionLocked(true);
 
         // タイマーを止める
         if (timerUI != null)
             timerUI.StopTimer();
+    }
+
+    /// 行動をロックする対象を決める。Inspector で指定されていればそれを、
+    /// 未設定なら「この端末が操作しているプレイヤー」を探す。
+    /// オンラインではプレイヤーが実行時にスポーンするため Inspector から事前指定できず、
+    /// かつ他人のプレイヤーをロックしてはいけないので、所有しているものだけを対象にする。
+    private PlayerController ResolvePlayerController()
+    {
+        if (playerController != null)
+            return playerController;
+
+        foreach (PlayerController pc in FindObjectsByType<PlayerController>(FindObjectsSortMode.None))
+        {
+            if (pc.IsLocalPlayer)
+                return pc;
+        }
+        return null;
     }
 
     public void OnNextMatch()

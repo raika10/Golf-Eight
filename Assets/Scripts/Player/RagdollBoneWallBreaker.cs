@@ -10,6 +10,13 @@ public class RagdollBoneWallBreaker : MonoBehaviour
     [HideInInspector] public float minSpeed = 3f;      // この相対速度以上で当たった時だけ壊す (m/s)
     [HideInInspector] public int damage = 1;           // 1回の衝突で与えるダメージ
 
+    private RagdollController ragdoll; // 壁破壊の窓口（権威判定とネットワーク配信を担う）
+
+    private void Awake()
+    {
+        ragdoll = GetComponentInParent<RagdollController>();
+    }
+
     private void OnCollisionEnter(Collision collision)
     {
         if (!breakEnabled)
@@ -22,6 +29,15 @@ public class RagdollBoneWallBreaker : MonoBehaviour
             return;
         }
         ContactPoint c = collision.GetContact(0);
-        wall.TakeDamage(damage, c.point, -collision.relativeVelocity); // 破片は進行方向へ飛ぶ
+        // 破片は進行方向へ飛ぶ。壁を壊すのは権威を持つ端末だけなので、必ず RagdollController の窓口を通す
+        //（直接 TakeDamage を呼ぶと各端末が独立に壊して迷路の形が食い違う）。
+        if (ragdoll != null)
+        {
+            ragdoll.ReportWallDamage(wall, damage, c.point, -collision.relativeVelocity);
+        }
+        else
+        {
+            wall.TakeDamage(damage, c.point, -collision.relativeVelocity); // 単体テスト等のフォールバック
+        }
     }
 }

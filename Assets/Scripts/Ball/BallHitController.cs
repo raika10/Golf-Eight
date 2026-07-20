@@ -1,5 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
+using FishNet.Object;
+using GolfEight.Network;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -102,6 +104,7 @@ public class BallHitController : MonoBehaviour
     private int swingTimeHash;
     private PlayerRig rig;                       // 自作リグ（あればスイングを再生）
     private PlayerController playerController;    // スイング中に体を横向きにする指示先
+    private PlayerNetworkSync playerNetworkSync;  // net-ball-hit：ヒット/壁破壊/吹っ飛ばしをサーバーへ依頼する（無ければローカル実行にフォールバック）
 
     private void Awake()
     {
@@ -139,6 +142,9 @@ public class BallHitController : MonoBehaviour
         {
             Debug.LogWarning("[BallHitController] PlayerController が見つかりません。スイング中の体の向き変更が効きません。", this);
         }
+
+        // net-ball-hit：ネットワーク接続時はサーバーへ依頼する。無ければ（単体テスト等）ローカル実行にフォールバック。
+        playerNetworkSync = GetComponentInParent<PlayerNetworkSync>();
     }
 
     /// 狙いの向きの基準になる Transform（未設定なら自分＝載っているオブジェクトの向き）。
@@ -200,6 +206,17 @@ public class BallHitController : MonoBehaviour
         Mouse mouse = Mouse.current;
         if (mouse == null)
         {
+            return;
+        }
+
+        // 行動ロック中（ゲーム開始前・カウントダウン中・ゴール後・空振りの後隙）はスイングできない。
+        // 移動は PlayerController 側で止まるが、スイングはここで止めないと構えられてしまう。
+        if (playerController != null && playerController.IsActionLocked)
+        {
+            if (isCharging)
+            {
+                CancelCharge();
+            }
             return;
         }
 
@@ -304,6 +321,14 @@ public class BallHitController : MonoBehaviour
             yield break;
         }
 
+        NetworkObject targetNob = playerNetworkSync != null ? other.GetComponent<NetworkObject>() : null;
+        if (targetNob != null)
+        {
+            playerNetworkSync.RequestFlingPlayer(targetNob, direction.normalized, power);
+            yield break;
+        }
+
+        // ネットワーク無し（単体テスト等）のフォールバック：ローカルで直接実行
         IKnockbackable knockable = other.GetComponent<IKnockbackable>();
         if (knockable != null)
         {
@@ -438,10 +463,20 @@ public class BallHitController : MonoBehaviour
         {
             yield return new WaitForSeconds(swingHitDelay);
         }
-        if (ball != null && !ball.IsHoled)
+        if (ball == null || ball.IsHoled)
         {
-            ball.Hit(direction, power, selfRagdoll);
+            yield break;
         }
+
+        NetworkObject ballNob = playerNetworkSync != null ? ball.GetComponent<NetworkObject>() : null;
+        if (ballNob != null)
+        {
+            playerNetworkSync.RequestHitBall(ballNob, direction, power);
+            yield break;
+        }
+
+        // ネットワーク無し（単体テスト等）のフォールバック：ローカルで直接実行
+        ball.Hit(direction, power, selfRagdoll);
     }
 
     /// スイングの当たる瞬間（swingHitDelay秒後）に、前方の壁（MazeWall）を壊す。
@@ -501,7 +536,17 @@ public class BallHitController : MonoBehaviour
             // 衝撃点＝壁面のうちプレイヤーの胸に一番近い点（正面）。当たった箇所だけが崩れる。
             // OverlapSphere が返すのは有効なコライダーなので、ボクセル化後の壁でも正しく点が取れる。
             Vector3 impactPoint = nearestCol != null ? nearestCol.ClosestPoint(origin) : nearest.transform.position;
-            nearest.TakeDamage(wallSwingDamage, impactPoint, flat * wallSwingImpact);
+            Vector3 impactVelocity = flat * wallSwingImpact;
+
+            if (playerNetworkSync != null)
+            {
+                playerNetworkSync.RequestBreakWall(nearest.gameObject.name, wallSwingDamage, impactPoint, impactVelocity);
+            }
+            else
+            {
+                // ネットワーク無し（単体テスト等）のフォールバック：ローカルで直接実行
+                nearest.TakeDamage(wallSwingDamage, impactPoint, impactVelocity);
+            }
         }
     }
 

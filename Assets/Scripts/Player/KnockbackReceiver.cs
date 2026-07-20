@@ -228,8 +228,12 @@ public class KnockbackReceiver : MonoBehaviour, IKnockbackable
                     MazeWall wall = wallCol.GetComponentInParent<MazeWall>();
                     if (wall != null && hitWalls.Add(wall)) // まだ壊していない壁だけ（多重ダメージ防止）
                     {
-                        wall.TakeDamage(wallDamage, wallHitPoint, vHit);
-                        // 貫通したので少し減速する。現在地点から遅くなった速度で放物線を引き直す。
+                        // 壁を壊すのは権威を持つ端末だけ（他端末はサーバーからの配信で同じ破壊を再生する）。
+                        // 直接 TakeDamage を呼ぶと各端末が独立に壊して迷路の形が食い違うため、必ず窓口を通す。
+                        ragdoll.ReportWallDamage(wall, wallDamage, wallHitPoint, vHit);
+
+                        // 貫通による減速は「見た目の軌道」なので、権威の有無にかかわらず全端末で行う。
+                        // 現在地点から遅くなった速度で放物線を引き直す。
                         startPos = hips.transform.position;
                         vel = vHit * wallPassSlowdown;
                         t = 0f;

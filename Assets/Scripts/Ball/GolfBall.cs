@@ -52,6 +52,20 @@ public class GolfBall : MonoBehaviour
     private bool hasHitPosition;            // 一度でも打たれたか
     private Vector3 initialPosition;        // 初期位置（まだ打たれていない時のリスポーン先）
 
+    /// 壁を壊した瞬間に発火する（壁, ダメージ, 衝撃点, 衝撃速度）。ネットワーク同期用のフックで、
+    /// GolfBall自体はFishNetを一切参照しない（BallNetworkSyncが購読して同期する）。
+    public event System.Action<MazeWall, int, Vector3, Vector3> OnWallDamaged;
+
+    /// プレイヤーに衝突した瞬間に発火する（衝突相手, 相対速度）。ネットワーク同期用のフック。
+    public event System.Action<RagdollController, Vector3> OnPlayerImpact;
+
+    /// この端末がこのボールの物理・状態を決める権威を持つか（サーバー）。BallNetworkSync が設定する。
+    /// false の端末は停止判定・場外リスポーン・衝突による効果を一切行わず、
+    /// NetworkTransform が運んでくる位置に従うだけにする。
+    /// これを守らないと、たとえば場外リスポーンの Unfreeze() がクライアント側で kinematic を解除してしまい、
+    /// クライアントが独自に物理を回してサーバーとズレる。単体（非ネットワーク）では true のままなので従来どおり動く。
+    public bool StateAuthority { get; set; } = true;
+
     /// このボールがローカル操作者のものか。
     public bool OwnedByLocalPlayer => ownedByLocalPlayer;
 
@@ -59,7 +73,19 @@ public class GolfBall : MonoBehaviour
     public bool IsHoled { get; private set; }
 
     /// いま動いているか（「止まっている球だけ打てる」判定などに使う）。
-    public bool IsMoving => slowTimer < stopDuration;
+    /// 権威のある端末（サーバー・単体）は自前の物理から判定する。
+    /// 権威の無い端末はボールが kinematic で物理が回らず slowTimer が動かないため、
+    /// 自前判定が当てにならない。そこで権威側から同期された値を使う。
+    public bool IsMoving => StateAuthority ? slowTimer < stopDuration : networkIsMoving;
+
+    // 権威側が判定した「動いているか」。BallNetworkSync が同期して設定する。
+    private bool networkIsMoving;
+
+    /// 権威側の「動いているか」を反映する（BallNetworkSync から呼ぶ）。
+    public void SetNetworkIsMoving(bool moving)
+    {
+        networkIsMoving = moving;
+    }
 
     /// 現在の質量（打った強さから初速を見積もるときに使う）。
     public float Mass => body != null ? body.mass : 1f;
@@ -124,6 +150,13 @@ public class GolfBall : MonoBehaviour
 
     private void Update()
     {
+        // 停止判定も場外リスポーンも「ボールの状態を書き換える」処理なので、権威を持つ端末だけが行う。
+        // 権威の無い端末（クライアント）では位置は NetworkTransform が運ぶので、ここで触ってはいけない。
+        if (!StateAuthority)
+        {
+            return;
+        }
+
         UpdateStopState();
 
         // 場外チェック：下に落ちたら「打球した場所」へリスポーン（未打球なら初期位置）
@@ -207,8 +240,14 @@ public class GolfBall : MonoBehaviour
             if (wall != null && collision.relativeVelocity.magnitude >= wallBreakMinSpeed)
             {
                 ContactPoint contact = collision.GetContact(0);
-                // 衝突直前の速度で破片を進行方向へ飛ばす（跳ね返り後の relativeVelocity ではなく実測の入射速度）。
-                wall.TakeDamage(wallDamage, contact.point, lastVelocity);
+                // 壁破壊は権威を持つ端末（サーバー）だけが実行する。クライアント側でこの衝突が起きても何もしない
+                // （BallNetworkSyncがサーバーからのブロードキャストを受けて各クライアントでも同じ破壊を再生する）。
+                if (StateAuthority)
+                {
+                    // 衝突直前の速度で破片を進行方向へ飛ばす（跳ね返り後の relativeVelocity ではなく実測の入射速度）。
+                    wall.TakeDamage(wallDamage, contact.point, lastVelocity);
+                    OnWallDamaged?.Invoke(wall, wallDamage, contact.point, lastVelocity);
+                }
 
                 // 跳ね返りを打ち消して貫通させる。物理ソルバが既に反発の速度を入れているので、
                 // 衝突直前の速度を元に「進行方向へ通り抜ける速度」で上書きする。
@@ -237,7 +276,41 @@ public class GolfBall : MonoBehaviour
         {
             return;
         }
-        rc.ApplyBallImpact(collision.relativeVelocity);
+        // 吹っ飛ばしも権威を持つ端末だけが実行し、他クライアントへはBallNetworkSyncが同期する。
+        if (StateAuthority)
+        {
+            rc.ApplyBallImpact(collision.relativeVelocity);
+            OnPlayerImpact?.Invoke(rc, collision.relativeVelocity);
+        }
+    }
+
+    /// 次の試合に向けて、指定位置で初期状態に戻す（再戦時にサーバーが呼ぶ）。
+    /// カップイン・停止固定・打球履歴をすべて解除するので、また打てる状態になる。
+    /// 権威の無い端末で呼ぶと kinematic を解除してサーバーとズレるため、権威側だけが実行する。
+    public void ResetForNewMatch(Vector3 position)
+    {
+        if (!StateAuthority)
+        {
+            return;
+        }
+
+        IsHoled = false;
+        isResting = false;
+        slowTimer = 0f;
+        hasHitPosition = false;
+        lastHitBy = null;
+        lastHitTime = -999f;
+        initialPosition = position;
+
+        // 物理を動ける状態に戻してから配置する
+        body.isKinematic = false;
+        body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+        body.linearVelocity = Vector3.zero;
+        body.angularVelocity = Vector3.zero;
+        body.position = position;
+        transform.position = position;
+
+        ApplySeeThrough(); // カップインで消したシルエットを戻す
     }
 
     /// カップインしたときに呼ぶ。速度を消してその場に固定し、以降は打てなくする。

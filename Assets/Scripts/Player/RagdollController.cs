@@ -32,6 +32,16 @@ public class RagdollController : MonoBehaviour
     [SerializeField] private Key testFlingKey = Key.R;        // このキーで吹っ飛ぶ
     [SerializeField] private float testFlingSpeed = 9f;       // 吹っ飛ぶ勢い (m/s)
 
+    [Header("関節の剛性（吹っ飛び時の伸び対策）")]
+    [Tooltip("骨の関節(CharacterJoint)に projection を効かせ、一定以上離れた骨をスナップして繋ぎ止める。\nネットワーク越しで手足がビヨーンと伸びるのを抑える")]
+    [SerializeField] private bool strengthenJoints = true;
+    [Tooltip("骨がこの距離(m)以上ずれたら関節が引き戻す。小さいほど伸びに厳しい")]
+    [SerializeField] private float jointProjectionDistance = 0.05f;
+    [Tooltip("骨がこの角度(度)以上ずれたら関節が引き戻す")]
+    [SerializeField] private float jointProjectionAngle = 20f;
+    [Tooltip("各骨のソルバー反復回数。多いほど関節が剛直になり伸びにくい（重くなる）")]
+    [SerializeField] private int boneSolverIterations = 20;
+
     private static readonly RaycastHit[] groundHits = new RaycastHit[16];
 
     private CharacterController cc;
@@ -60,6 +70,35 @@ public class RagdollController : MonoBehaviour
     /// true の間は内蔵の自動起き上がり（recoverTime）を止める。
     /// KnockbackReceiver が「着地してから」の正しいタイミングで起き上がりを管理するときに使う。
     public bool SuppressAutoRecover { get; set; }
+
+    /// ネットワークのリモート（＝この端末が所有していない）プレイヤーか。
+    /// true の間は、本体の位置と CharacterController の有効/無効を触らず NetworkTransform（owner権威）に委譲し、
+    /// ラグドールは見た目（骨の物理）だけ再生する。吹っ飛び中の物理は各端末で独立に走って着地点が
+    /// わずかにズレるため、位置は owner のものへ一本化しないと撃ち合うたびにズレが累積する。
+    /// PlayerNetworkSync が IsOwner に応じて設定する。単体（非ネットワーク）では常に false のまま。
+    public bool NetworkRemote { get; set; }
+
+    /// この端末で壁の破壊を実際に適用してよいか（サーバー権威）。PlayerNetworkSync が設定する。
+    /// false の端末は自分では壊さず、サーバーからの配信を受けて同じ破壊を再生する。
+    /// 単体（非ネットワーク）では true のままなので従来どおり動く。
+    public bool WallDamageAuthority { get; set; } = true;
+
+    /// ラグドール由来で壁を壊した瞬間に発火する（壁, ダメージ, 衝撃点, 衝撃速度）。
+    /// PlayerNetworkSync が購読して全クライアントへ配信する。RagdollController 自体は FishNet を知らない。
+    public event System.Action<MazeWall, int, Vector3, Vector3> OnWallDamaged;
+
+    /// ラグドール（飛行中の貫通・着地後の骨の衝突）が壁を壊すときの唯一の窓口。
+    /// 権威を持つ端末だけが実際に削り、その結果をイベントで通知する。
+    /// これを通さずに MazeWall.TakeDamage を直接呼ぶと、各端末が独立に壊して迷路の形が食い違う。
+    public void ReportWallDamage(MazeWall wall, int damage, Vector3 impactPoint, Vector3 impactVelocity)
+    {
+        if (wall == null || !WallDamageAuthority)
+        {
+            return;
+        }
+        wall.TakeDamage(damage, impactPoint, impactVelocity);
+        OnWallDamaged?.Invoke(wall, damage, impactPoint, impactVelocity);
+    }
 
     private void Awake()
     {
@@ -110,6 +149,23 @@ public class RagdollController : MonoBehaviour
             if (bones[i].GetComponent<RagdollBoneWallBreaker>() == null)
             {
                 bones[i].gameObject.AddComponent<RagdollBoneWallBreaker>();
+            }
+
+            // 関節を剛直にして「伸び」を抑える。projection は骨が一定以上離れると強制的に引き戻すので、
+            // ネットワーク越しに手足がビヨーンと伸びる（関節が引き伸ばされる）のを物理側で潰せる。
+            if (strengthenJoints)
+            {
+                CharacterJoint joint = bones[i].GetComponent<CharacterJoint>();
+                if (joint != null)
+                {
+                    joint.enableProjection = true;
+                    joint.projectionDistance = jointProjectionDistance;
+                    joint.projectionAngle = jointProjectionAngle;
+                    joint.enablePreprocessing = false; // プリプロセスを切ると引き伸ばし時の挙動が安定する
+                }
+                // ソルバー反復を増やすと関節がより硬く保たれ、伸びにくくなる
+                bones[i].solverIterations = boneSolverIterations;
+                bones[i].solverVelocityIterations = boneSolverIterations;
             }
         }
         // 骨の中で最上位（親を辿って最初に見つかるRigidbody）を hips とみなす
@@ -327,10 +383,15 @@ public class RagdollController : MonoBehaviour
     /// 指定した位置で起き上がってアニメ状態に戻る（場外リスポーンなどに使う）。
     public void RecoverAt(Vector3 position)
     {
-        // 先にプレイヤー本体を移す。その後で ragdoll を解除するので、
-        // 骨は新しい位置で立ちポーズにスナップする（元の位置へワープして見えない）。
-        transform.position = position;
-        transform.rotation = Quaternion.Euler(0f, transform.eulerAngles.y, 0f); // 直立に戻す
+        // リモート（非所有）プレイヤーは本体位置を NetworkTransform（owner権威）に委譲する。
+        // 自前のラグドール物理で求めた着地点でワープさせると owner の着地点とズレ、累積するため触らない。
+        if (!NetworkRemote)
+        {
+            // 先にプレイヤー本体を移す。その後で ragdoll を解除するので、
+            // 骨は新しい位置で立ちポーズにスナップする（元の位置へワープして見えない）。
+            transform.position = position;
+            transform.rotation = Quaternion.Euler(0f, transform.eulerAngles.y, 0f); // 直立に戻す
+        }
 
         isRagdoll = false;
         SetControlsActive(true);   // 操作を戻す
@@ -391,7 +452,13 @@ public class RagdollController : MonoBehaviour
         if (animator != null) animator.enabled = active;
         if (playerController != null) playerController.SetRagdollMode(!active, active ? null : hipsBone);
         if (hitController != null) hitController.enabled = active;
-        cc.enabled = active;
+        // リモート（非所有）プレイヤーの CharacterController は NetworkTransform が管理するので触らない。
+        // ここで有効化すると、非所有側で重力移動・着地計算が独自に走って owner権威の位置同期と競合し、
+        // 撃ち合うたびに位置がズレて累積する（見た目のラグドール＝骨の物理は NetworkRemote でも再生される）。
+        if (!NetworkRemote)
+        {
+            cc.enabled = active;
+        }
     }
 
     /// 骨を物理（floppy ragdoll）にするか、固まったポーズ（キネマティック）にするか。

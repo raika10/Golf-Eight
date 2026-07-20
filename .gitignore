@@ -105,4 +105,7 @@ InitTestScene*.unity*
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
 
+# 動作確認で撮ったスクリーンショットの出力先（プロジェクトの資産ではないので追跡しない）
+/[Aa]ssets/[Ss]creenshots/
+
 .DS_Store

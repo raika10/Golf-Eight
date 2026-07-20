@@ -116,6 +116,10 @@ GameObject:
   - component: {fileID: 5794815139418449670}
   - component: {fileID: 8616273210584045681}
   - component: {fileID: 1044675997748282902}
+  - component: {fileID: 4984131531420145746}
+  - component: {fileID: 244619813035071223}
+  - component: {fileID: 1784575135263834979}
+  - component: {fileID: 1351309258938878726}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -284,7 +288,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f1e2d3c4b5a6978869504132a3b4c5d6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerController
-  isLocalPlayer: 1
+  isLocalPlayer: 0
   moveSpeed: 15
   mouseSensitivity: 0.1
   pitchSensitivity: 0.1
@@ -343,9 +347,9 @@ MonoBehaviour:
   playerAimHeight: 1
   breakWallsOnSwing: 1
   wallSwingRange: 2.5
-  wallSwingHeight: 1
+  wallSwingHeight: 0
   wallSwingDamage: 1
-  wallSwingImpact: 8
+  wallSwingImpact: 40
   wallSwingMask:
     serializedVersion: 2
     m_Bits: 4294967295
@@ -399,6 +403,10 @@ MonoBehaviour:
   enableTestKey: 1
   testFlingKey: 32
   testFlingSpeed: 40
+  strengthenJoints: 1
+  jointProjectionDistance: 0.05
+  jointProjectionAngle: 20
+  boneSolverIterations: 20
 --- !u!114 &5794815139418449670
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -475,6 +483,149 @@ MonoBehaviour:
   size: 1
   color: {r: 0, g: 1, b: 0, a: 1}
   localPlayerOnly: 1
+--- !u!114 &4984131531420145746
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 669575621156769685}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 26b716c41e9b56b4baafaf13a523ba2e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: FishNet.Runtime::FishNet.Object.NetworkObject
+  _localLevelOfDetailCalculationType: 0
+  _useLevelOfDetail: 0
+  _useRootLevelOfDetail: 1
+  NetworkObserver: {fileID: 0}
+  _enablePrediction: 0
+  _predictionType: 0
+  _localReconcileCorrectionType: 2
+  _graphicalObject: {fileID: 0}
+  _detachGraphicalObject: 0
+  _enableStateForwarding: 1
+  _networkTransform: {fileID: 0}
+  _ownerInterpolation: 1
+  _ownerSmoothedProperties: 255
+  _adaptiveInterpolation: 3
+  _spectatorSmoothedProperties: 255
+  _spectatorInterpolation: 2
+  _enableTeleport: 0
+  _teleportThreshold: 1
+  <PrefabId>k__BackingField: 3
+  <SpawnableCollectionId>k__BackingField: 0
+  <AssetPathHash>k__BackingField: 5306845881338098766
+  SceneId: 0
+  SerializedTransformProperties:
+    Position: {x: 20.87, y: 4.38, z: 2.13005}
+    Rotation: {x: 0, y: 0, z: 0, w: 1}
+    Scale: {x: 1, y: 1, z: 1}
+    IsValid: 1
+  <IsNested>k__BackingField: 0
+  WasActiveDuringEdit: 0
+  WasActiveDuringEdit_Set1: 1
+  <ComponentIndex>k__BackingField: 0
+  <PredictedSpawn>k__BackingField: {fileID: 0}
+  <PredictedOwner>k__BackingField: {fileID: 0}
+  NetworkBehaviours:
+  - {fileID: 244619813035071223}
+  - {fileID: 1784575135263834979}
+  - {fileID: 1351309258938878726}
+  InitializedParentNetworkBehaviour: {fileID: 0}
+  InitializedNestedNetworkObjects: []
+  RuntimeParentNetworkBehaviour: {fileID: 0}
+  RuntimeChildNetworkBehaviours: []
+  _isNetworked: 1
+  _isSpawnable: 1
+  _isGlobal: 0
+  _initializeOrder: 0
+  _preventDespawnOnDisconnect: 0
+  _defaultDespawnType: 0
+  _initializedTimestamp: -8584171351837632530
+--- !u!114 &244619813035071223
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 669575621156769685}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a2836e36774ca1c4bbbee976e17b649c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: FishNet.Runtime::FishNet.Component.Transforming.NetworkTransform
+  _componentIndexCache: 0
+  _addedNetworkObject: {fileID: 4984131531420145746}
+  _networkObjectCache: {fileID: 4984131531420145746}
+  _componentConfiguration: 1
+  _synchronizeParent: 0
+  _packing:
+    Position: 1
+    Rotation: 1
+    Scale: 0
+  _useScaledTime: 1
+  _interpolation: 2
+  _extrapolation: 2
+  _enableTeleport: 0
+  _teleportThreshold: 1
+  _clientAuthoritative: 1
+  _sendToOwner: 1
+  _interval: 1
+  _synchronizePosition: 1
+  _positionSensitivity: 0.001
+  _positionSnapping:
+    X: 0
+    Y: 0
+    Z: 0
+  _synchronizeRotation: 1
+  _rotationSnapping:
+    X: 0
+    Y: 0
+    Z: 0
+  _synchronizeScale: 1
+  _scaleSensitivity: 0.001
+  _scaleSnapping:
+    X: 0
+    Y: 0
+    Z: 0
+--- !u!114 &1784575135263834979
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 669575621156769685}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 01fa2bcf18c85dd4db4e4e9ecb24f578, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GolfEight.Network.PlayerNetworkSync
+  _componentIndexCache: 1
+  _addedNetworkObject: {fileID: 4984131531420145746}
+  _networkObjectCache: {fileID: 4984131531420145746}
+--- !u!114 &1351309258938878726
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 669575621156769685}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e8cac635f24954048aad3a6ff9110beb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: FishNet.Runtime::FishNet.Component.Animating.NetworkAnimator
+  _componentIndexCache: 2
+  _addedNetworkObject: {fileID: 4984131531420145746}
+  _networkObjectCache: {fileID: 4984131531420145746}
+  IgnoredParameters: []
+  _animator: {fileID: 406837434560219145}
+  _synchronizeWhenDisabled: 0
+  _smoothFloats: 1
+  _interpolation: 2
+  _clientAuthoritative: 1
+  _sendToOwner: 0
 --- !u!1 &857027028242564786
 GameObject:
   m_ObjectHideFlags: 0
@@ -863,7 +1014,7 @@ Camera:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1829292301565472997}
-  m_Enabled: 1
+  m_Enabled: 0
   serializedVersion: 2
   m_ClearFlags: 1
   m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0}
@@ -914,7 +1065,7 @@ AudioListener:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1829292301565472997}
-  m_Enabled: 1
+  m_Enabled: 0
 --- !u!114 &3676510257660251694
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3090,7 +3241,6 @@ GameObject:
   - component: {fileID: 6978815505304454065}
   - component: {fileID: 406837434560219145}
   - component: {fileID: 7882002836422417735}
-  - component: {fileID: 80051318878584106}
   m_Layer: 0
   m_Name: Character
   m_TagString: Untagged
@@ -3162,40 +3312,6 @@ CharacterController:
   m_SkinWidth: 0.08
   m_MinMoveDistance: 0.001
   m_Center: {x: 0, y: 0.8, z: 0}
---- !u!114 &80051318878584106
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7641660756411767683}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f1e2d3c4b5a6978869504132a3b4c5d6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PlayerController
-  isLocalPlayer: 1
-  moveSpeed: 6
-  mouseSensitivity: 0.1
-  pitchSensitivity: 0.1
-  lockCursor: 1
-  jumpHeight: 1.5
-  gravity: -20
-  cameraDistance: 6
-  cameraHeight: 2
-  minPitch: -30
-  maxPitch: 70
-  cameraSmoothTime: 0.05
-  fadeOccludingWalls: 1
-  occlusionFadeAlpha: 0.15
-  occlusionFadeSpeed: 8
-  occlusionCheckRadius: 0.25
-  animator: {fileID: 0}
-  speedParam: Speed
-  groundedParam: Grounded
-  jumpParam: Jump
-  speedDamp: 0.1
-  swingTurnSpeed: 540
 --- !u!1 &7821831810667630045
 GameObject:
   m_ObjectHideFlags: 0
