@@ -310,5 +310,26 @@ namespace GolfEight.Network
                 rc.Fling(direction * power);
             }
         }
+
+        /// スイングが当たった音（かきーん）を全端末で鳴らす。
+        /// 打った本人はレスポンス優先で即ローカル再生し、他の端末へはここ経由で配る
+        /// （ボール打撃の RequestHitBall は ServerRpc＝サーバーでしか走らないため、
+        /// 　音を配る経路がこれとは別に必要になる）。
+        [ServerRpc]
+        public void RequestPlaySwingHitVoice()
+        {
+            BroadcastSwingHitVoice();
+        }
+
+        /// ExcludeOwner：打った本人は既にローカルで鳴らしているので二重再生しない。
+        [ObserversRpc(ExcludeOwner = true)]
+        private void BroadcastSwingHitVoice()
+        {
+            PlayerVoice voice = GetComponent<PlayerVoice>();
+            if (voice != null)
+            {
+                voice.PlaySwingHitVoice();
+            }
+        }
     }
 }

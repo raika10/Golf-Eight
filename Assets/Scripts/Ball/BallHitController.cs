@@ -105,6 +105,7 @@ public class BallHitController : MonoBehaviour
     private PlayerRig rig;                       // 自作リグ（あればスイングを再生）
     private PlayerController playerController;    // スイング中に体を横向きにする指示先
     private PlayerNetworkSync playerNetworkSync;  // net-ball-hit：ヒット/壁破壊/吹っ飛ばしをサーバーへ依頼する（無ければローカル実行にフォールバック）
+    private PlayerVoice playerVoice;              // かきーん（スイングが当たった音）の再生先
 
     private void Awake()
     {
@@ -145,6 +146,23 @@ public class BallHitController : MonoBehaviour
 
         // net-ball-hit：ネットワーク接続時はサーバーへ依頼する。無ければ（単体テスト等）ローカル実行にフォールバック。
         playerNetworkSync = GetComponentInParent<PlayerNetworkSync>();
+
+        // ボイス（かきーん）。無くても動作に影響しない。
+        playerVoice = GetComponentInParent<PlayerVoice>();
+    }
+
+    /// スイングが当たった瞬間の音（かきーん）。
+    /// 本人はレスポンス優先で即ローカル再生し、他の端末へはサーバー経由で配る。
+    private void PlaySwingHitVoice()
+    {
+        if (playerVoice != null)
+        {
+            playerVoice.PlaySwingHitVoice();
+        }
+        if (playerNetworkSync != null)
+        {
+            playerNetworkSync.RequestPlaySwingHitVoice();
+        }
     }
 
     /// 狙いの向きの基準になる Transform（未設定なら自分＝載っているオブジェクトの向き）。
@@ -321,6 +339,8 @@ public class BallHitController : MonoBehaviour
             yield break;
         }
 
+        PlaySwingHitVoice(); // 相手に当たった＝かきーん
+
         NetworkObject targetNob = playerNetworkSync != null ? other.GetComponent<NetworkObject>() : null;
         if (targetNob != null)
         {
@@ -467,6 +487,8 @@ public class BallHitController : MonoBehaviour
         {
             yield break;
         }
+
+        PlaySwingHitVoice(); // ボールに当たった＝かきーん
 
         NetworkObject ballNob = playerNetworkSync != null ? ball.GetComponent<NetworkObject>() : null;
         if (ballNob != null)

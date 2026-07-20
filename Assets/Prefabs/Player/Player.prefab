@@ -120,6 +120,7 @@ GameObject:
   - component: {fileID: 244619813035071223}
   - component: {fileID: 1784575135263834979}
   - component: {fileID: 1351309258938878726}
+  - component: {fileID: 7712004365501981234}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -542,7 +543,7 @@ MonoBehaviour:
   _initializeOrder: 0
   _preventDespawnOnDisconnect: 0
   _defaultDespawnType: 0
-  _initializedTimestamp: -8584171351837632530
+  _initializedTimestamp: -8584170845823727235
 --- !u!114 &244619813035071223
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -626,6 +627,28 @@ MonoBehaviour:
   _interpolation: 2
   _clientAuthoritative: 1
   _sendToOwner: 0
+--- !u!114 &7712004365501981234
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 669575621156769685}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b3f1c07a9d4e4a2f8c5d6e7f80912a34, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  hitVoice: {fileID: 8300000, guid: 6747778658d766448812951328e6888b, type: 3}
+  fallVoice: {fileID: 8300000, guid: 9e3d69093c8ead34793077f73c61d0a6, type: 3}
+  swingHitVoice: {fileID: 8300000, guid: 2cf3cecceb1a7ec408b900426d193769, type: 3}
+  fallVoiceY: -5
+  fallVoiceRearmY: -8
+  volume: 0.6
+  spatialBlend: 1
+  minDistance: 3
+  maxDistance: 40
+  minInterval: 0.2
 --- !u!1 &857027028242564786
 GameObject:
   m_ObjectHideFlags: 0
