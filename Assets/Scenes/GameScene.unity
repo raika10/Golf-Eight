@@ -18028,7 +18028,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8c1e1911b7fc74885b62cad6527c3d28, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GolfEight.Network.NetworkBootstrap
-  titleSceneName: NetworkTestTitleScene
+  titleSceneName: TitleScene
   hostLoopbackAddress: 127.0.0.1
 --- !u!4 &1082799584
 Transform:
