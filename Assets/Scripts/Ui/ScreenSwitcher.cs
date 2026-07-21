@@ -14,7 +14,7 @@ public class ScreenSwitcher : MonoBehaviour
     public TMP_InputField ipInputField;
     public TMP_Text errorText;
 
-    public String GameSceneName = "GameScene";
+    public string GameSceneName = "GameScene";
 
     void Start()
     {
