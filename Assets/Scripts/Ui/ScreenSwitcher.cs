@@ -18,14 +18,25 @@ public class ScreenSwitcher : MonoBehaviour
 
     void Start()
     {
-        ShowTitle();
+        // 前回の入力値をInputFieldに反映
+        if (nameInputField != null)
+            nameInputField.text = PlayerPrefs.GetString("Name", "");
+        if (ipInputField != null)
+            ipInputField.text = PlayerPrefs.GetString("IP_address", "");
+        if (portInputField != null)
+            portInputField.text = PlayerPrefs.GetInt("Port", 7770).ToString();
 
-        // GameState=-1ならエラー表示
+        // GameState=-1なら接続失敗→RoomPanelを開いてエラー表示
         if (PlayerPrefs.GetInt("GameState", 0) == -1)
         {
+            ShowRoom();
             if (errorText != null)
                 errorText.text = "接続に失敗しました";
             PlayerPrefs.SetInt("GameState", 0);
+        }
+        else
+        {
+            ShowTitle();
         }
     }
 

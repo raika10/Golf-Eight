@@ -35174,8 +35174,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 1, y: 1}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: -125, y: -125}
-  m_SizeDelta: {x: 200, y: 200}
+  m_AnchoredPosition: {x: -80, y: -80}
+  m_SizeDelta: {x: 130, y: 130}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!224 &1090836302978982921
 RectTransform:
@@ -35448,7 +35448,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Minimap
   mapArea: {fileID: 982728869742349102}
   playerDot: {fileID: 5782564182254194544}
-  playerTransform: {fileID: 0}
+  minimapCamera: {fileID: 0}
   worldMin: {x: 0, y: 0}
   worldMax: {x: 100, y: 100}
 --- !u!224 &5782564182254194544
@@ -35777,13 +35777,33 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 110428346877290289, guid: d5b765a33dd3c734caa3d597d1f0b0c8, type: 3}
+      propertyPath: m_CameraType
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4515533650364367573, guid: d5b765a33dd3c734caa3d597d1f0b0c8, type: 3}
+      propertyPath: m_ClearFlags
+      value: 4
+      objectReference: {fileID: 0}
+    - target: {fileID: 4515533650364367573, guid: d5b765a33dd3c734caa3d597d1f0b0c8, type: 3}
+      propertyPath: far clip plane
+      value: 100
+      objectReference: {fileID: 0}
+    - target: {fileID: 4515533650364367573, guid: d5b765a33dd3c734caa3d597d1f0b0c8, type: 3}
+      propertyPath: orthographic size
+      value: 50
+      objectReference: {fileID: 0}
+    - target: {fileID: 6217983382207768474, guid: d5b765a33dd3c734caa3d597d1f0b0c8, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 6217983382207768474, guid: d5b765a33dd3c734caa3d597d1f0b0c8, type: 3}
       propertyPath: m_LocalPosition.x
       value: 50
       objectReference: {fileID: 0}
     - target: {fileID: 6217983382207768474, guid: d5b765a33dd3c734caa3d597d1f0b0c8, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 200
+      value: 50
       objectReference: {fileID: 0}
     - target: {fileID: 6217983382207768474, guid: d5b765a33dd3c734caa3d597d1f0b0c8, type: 3}
       propertyPath: m_LocalPosition.z
