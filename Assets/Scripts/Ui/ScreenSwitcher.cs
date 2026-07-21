@@ -14,6 +14,8 @@ public class ScreenSwitcher : MonoBehaviour
     public TMP_InputField ipInputField;
     public TMP_Text errorText;
 
+    public String GameSceneName = "GameScene";
+
     void Start()
     {
         ShowTitle();
@@ -88,7 +90,7 @@ public class ScreenSwitcher : MonoBehaviour
         PlayerPrefs.SetInt("IsHost", 1);
         PlayerPrefs.SetInt("GameState", 0);
         PlayerPrefs.Save();
-        SceneManager.LoadScene("GameScene");
+        SceneManager.LoadScene(GameSceneName);
     }
 
     // ゲストとして参加する
@@ -103,7 +105,7 @@ public class ScreenSwitcher : MonoBehaviour
         PlayerPrefs.SetInt("IsHost", 0);
         PlayerPrefs.SetInt("GameState", 0);
         PlayerPrefs.Save();
-        SceneManager.LoadScene("GameScene");
+        SceneManager.LoadScene(GameSceneName);
     }
 
     public void QuitGame()
