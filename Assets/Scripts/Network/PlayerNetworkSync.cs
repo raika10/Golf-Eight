@@ -25,8 +25,15 @@ namespace GolfEight.Network
         // 接続順のインデックス。色（担当ボールと共通）と勝敗表示の名前に使う。
         private readonly SyncVar<int> playerIndex = new SyncVar<int>(-1);
 
+        // このプレイヤーの表示名。所有クライアントが Title で入力した値（PlayerPrefs "Name"）を
+        // サーバーへ送り、サーバーが SyncVar 経由で全員へ配る。空なら色ベースの既定名にフォールバックする。
+        private readonly SyncVar<string> playerName = new SyncVar<string>(string.Empty);
+
         /// 接続順のインデックス（-1 は未割り当て）。勝者表示などに使う。
         public int PlayerIndex => playerIndex.Value;
+
+        /// Title で入力されたプレイヤー名（未受信・未入力なら空文字）。勝者表示などに使う。
+        public string PlayerName => playerName.Value;
 
         /// このプレイヤーの担当ボール。勝者判定（入ったボールの持ち主）で使う。
         public NetworkObject AssignedBall => assignedBall.Value;
@@ -164,7 +171,18 @@ namespace GolfEight.Network
                 {
                     gameManager.ApplyLocalPlayerInputLock();
                 }
+
+                // Title で入力した自分の名前をサーバーへ知らせる。自分のプレイヤーだけが送るので、
+                // 各クライアントが自分の PlayerPrefs("Name") を担当し、全員分がサーバーで揃う。
+                SubmitName_ServerRpc(TitlePrefs.GetPlayerName());
             }
+        }
+
+        /// 所有クライアントが自分の表示名をサーバーへ登録する。サーバーが SyncVar で全員へ配る。
+        [ServerRpc]
+        private void SubmitName_ServerRpc(string name)
+        {
+            playerName.Value = string.IsNullOrWhiteSpace(name) ? string.Empty : name.Trim();
         }
 
         public override void OnOwnershipClient(NetworkConnection prevOwner)
