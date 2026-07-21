@@ -18,14 +18,17 @@ public class ScreenSwitcher : MonoBehaviour
 
     void Start()
     {
-        ShowTitle();
-
-        // GameState=-1ならエラー表示
+        // GameState=-1なら接続失敗→RoomPanelを開いてエラー表示
         if (PlayerPrefs.GetInt("GameState", 0) == -1)
         {
+            ShowRoom();
             if (errorText != null)
                 errorText.text = "接続に失敗しました";
             PlayerPrefs.SetInt("GameState", 0);
+        }
+        else
+        {
+            ShowTitle();
         }
     }
 
