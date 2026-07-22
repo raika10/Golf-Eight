@@ -132,6 +132,18 @@ MonoBehaviour:
   explosionRadius: 3
   fragmentLifetime: 3
   fragmentMaterial: {fileID: 2100000, guid: b6aa2eaf296c1469a8c202db2356fec0, type: 2}
+  localizedDestruction: 1
+  destroyCellSize: 0.4
+  destroyRadius: 0.7
+  destroyRadiusPerSpeed: 0.02
   onDestroyed:
     m_PersistentCalls:
       m_Calls: []
+  hitClips:
+  - {fileID: 8300000, guid: a12fd790d4aec495c82cd6d1389b69dc, type: 3}
+  - {fileID: 8300000, guid: 6ae54c8ae2ec24886aceaf07517d4cc3, type: 3}
+  sfxVolume: 1
+  pitchRandomRange: 0.08
+  minDistance: 2
+  maxDistance: 25
+  minHitInterval: 0.05
