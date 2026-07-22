@@ -153,6 +153,8 @@ public class PlayerController : MonoBehaviour
 
     /// 操作・カメラの担当をこのプレイヤーに切り替える／外す（デバッグ用の視点切替などに使う）。
     /// on にする時はカメラを取り直す（複数プレイヤーで同じ Camera.main を使い回す前提）。
+    /// オンライン時はここが Start() より後（FishNet の所有権付与タイミング）に呼ばれることがあるため、
+    /// カーソルロックもここで確実にかける（Start() 任せだと一度もロックされないまま残る事故があった）。
     public void SetLocalPlayer(bool on)
     {
         isLocalPlayer = on;
@@ -160,7 +162,24 @@ public class PlayerController : MonoBehaviour
         {
             AcquireCamera();
             cameraSnapped = false; // 切り替え直後はワープしてよい（新しい位置へスムージングさせない）
+            if (lockCursor)
+            {
+                SetCursorLocked(true);
+            }
         }
+    }
+
+    /// カーソルの表示/ロックを外部から制御する（ロビーではUIボタンを押せるよう表示し、
+    /// プレイ中は視点操作のためロックする、といった GameManager 側からの切り替えに使う）。
+    /// 自分が操作しているプレイヤー以外から呼ばれても何もしない。
+    public void SetCursorLocked(bool locked)
+    {
+        if (!isLocalPlayer)
+        {
+            return;
+        }
+        Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
+        Cursor.visible = !locked;
     }
 
     private void Awake()
@@ -211,8 +230,7 @@ public class PlayerController : MonoBehaviour
     {
         if (isLocalPlayer && lockCursor)
         {
-            Cursor.lockState = CursorLockMode.Locked;
-            Cursor.visible = false;
+            SetCursorLocked(true);
         }
     }
 

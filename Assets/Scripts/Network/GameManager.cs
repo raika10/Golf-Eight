@@ -59,6 +59,9 @@ namespace GolfEight.Network
         /// ロビーで勝手に歩き回ったり、カウントダウン中に動いたりできないようにするため。
         /// Playing 以外（Lobby / Countdown / Finished）はすべてロック対象。
         /// プレイヤーは実行時にスポーンするので、スポーン側（PlayerNetworkSync）からも呼ぶ。
+        ///
+        /// あわせてカーソルも連動させる：行動ロック中（Lobby/Countdown/Finished）はロビーの
+        /// 「ゲームスタート」や決着後のボタンを押せるようカーソルを見せ、Playing中は視点操作のためロックする。
         public void ApplyLocalPlayerInputLock()
         {
             bool locked = state.Value != GameState.Playing;
@@ -67,6 +70,7 @@ namespace GolfEight.Network
                 if (pc.IsLocalPlayer)
                 {
                     pc.SetActionLocked(locked);
+                    pc.SetCursorLocked(!locked);
                     return;
                 }
             }

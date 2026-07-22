@@ -37,7 +37,7 @@ namespace GolfEight.Network
         {
             var go = new GameObject("LoadingScreen");
             var loading = go.AddComponent<LoadingScreen>();
-            loading.Build(ResolveFont(fontOverride));
+            loading.Build(RuntimeUiFont.Resolve(fontOverride));
             go.SetActive(false);
             return loading;
         }
@@ -211,41 +211,6 @@ namespace GolfEight.Network
             rect.pivot = new Vector2(0.5f, 0.5f);
             rect.offsetMin = Vector2.zero;
             rect.offsetMax = Vector2.zero;
-        }
-
-        /// 使うフォントを決める。優先は明示指定 → シーンに読み込まれている日本語対応フォント
-        /// （Noto/JP を名前に含むもの）→ TMP のデフォルト → 見つかった最初のもの。
-        /// これで「接続中...」の日本語が文字化けしない。
-        private static TMP_FontAsset ResolveFont(TMP_FontAsset preferred)
-        {
-            if (preferred != null)
-            {
-                return preferred;
-            }
-
-            TMP_FontAsset firstFound = null;
-            foreach (var font in Resources.FindObjectsOfTypeAll<TMP_FontAsset>())
-            {
-                if (font == null)
-                {
-                    continue;
-                }
-                string lower = font.name.ToLowerInvariant();
-                if (lower.Contains("noto") || lower.Contains("jp") || lower.Contains("japan"))
-                {
-                    return font;
-                }
-                if (firstFound == null)
-                {
-                    firstFound = font;
-                }
-            }
-
-            if (TMP_Settings.defaultFontAsset != null)
-            {
-                return TMP_Settings.defaultFontAsset;
-            }
-            return firstFound;
         }
     }
 }
