@@ -129,4 +129,18 @@ public class GoalUIManager : MonoBehaviour
         Application.Quit();
 #endif
     }
+
+    public void OnBackToTitle()
+    {
+        var bootstrap = FindFirstObjectByType<GolfEight.Network.NetworkBootstrap>();
+        if (bootstrap != null)
+        {
+            bootstrap.ReturnToTitleManually();
+        }
+        else
+        {
+            // NetworkBootstrapが存在しない構成（オフラインテスト等）向けの保険
+            SceneManager.LoadScene("TitleScene");
+        }
+    }
 }
