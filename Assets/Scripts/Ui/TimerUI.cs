@@ -4,7 +4,7 @@ using TMPro;
 public class TimerUI : MonoBehaviour
 {
     public TMP_Text timerText;
-    public float timeLimit = 300f;
+    public float timeLimit = 180f;
     public Color normalColor = Color.white;
     public Color warningColor = Color.red;
     public float warningTime = 30f;
