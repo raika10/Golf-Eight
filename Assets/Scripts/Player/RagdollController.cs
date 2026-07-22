@@ -1,6 +1,5 @@
 using System.Collections;
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 /// リグ付きモデル（Mixamo等）用の Ragdoll 切り替え。
 /// 普段は Animator でアニメ、他プレイヤーに飛ばされた時だけ物理でぐにゃっと倒れる。
@@ -26,11 +25,6 @@ public class RagdollController : MonoBehaviour
     [Header("ボールに当たったら倒れる")]
     [SerializeField] private bool flingOnBallHit = true;      // 速いボールに当たったら倒れる
     [SerializeField] private float ballFlingSpeed = 8f;       // この速さ以上のボールに当たったら倒れる (m/s)
-
-    [Header("テスト用（他プレイヤーに突き飛ばされた再現）")]
-    [SerializeField] private bool enableTestKey = true;       // キーで吹っ飛びを再現できるようにする
-    [SerializeField] private Key testFlingKey = Key.R;        // このキーで吹っ飛ぶ
-    [SerializeField] private float testFlingSpeed = 9f;       // 吹っ飛ぶ勢い (m/s)
 
     [Header("関節の剛性（吹っ飛び時の伸び対策）")]
     [Tooltip("骨の関節(CharacterJoint)に projection を効かせ、一定以上離れた骨をスナップして繋ぎ止める。\nネットワーク越しで手足がビヨーンと伸びるのを抑える")]
@@ -250,7 +244,6 @@ public class RagdollController : MonoBehaviour
     {
         if (!isRagdoll)
         {
-            CheckTestKey(); // テスト用：キーで吹っ飛ばされた状態を再現
             return;
         }
         // 内蔵の自動起き上がり。KnockbackReceiver が管理しているとき（Suppress中）は使わない
@@ -262,20 +255,6 @@ public class RagdollController : MonoBehaviour
             {
                 Recover();
             }
-        }
-    }
-
-    /// テスト用：キーを押すと「正面から突き飛ばされた」ように後ろ斜め上へ吹っ飛ぶ。
-    private void CheckTestKey()
-    {
-        if (!enableTestKey || Keyboard.current == null)
-        {
-            return;
-        }
-        if (Keyboard.current[testFlingKey].wasPressedThisFrame)
-        {
-            Vector3 dir = (-transform.forward + Vector3.up * 0.6f).normalized;
-            Fling(dir * testFlingSpeed);
         }
     }
 

@@ -18308,6 +18308,7 @@ MonoBehaviour:
   connectionTimeoutSeconds: 15
   loadingScreen: {fileID: 0}
   loadingFont: {fileID: 0}
+  lobbyStartUI: {fileID: 0}
 --- !u!4 &1082799584
 Transform:
   m_ObjectHideFlags: 0
@@ -35445,8 +35446,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 1, y: 1}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: -80, y: -80}
-  m_SizeDelta: {x: 130, y: 130}
+  m_AnchoredPosition: {x: -130, y: -130}
+  m_SizeDelta: {x: 220, y: 220}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!224 &1090836302978982921
 RectTransform:
@@ -35612,7 +35613,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TimerUI
   timerText: {fileID: 6189465629936527478}
-  timeLimit: 300
+  timeLimit: 180
   normalColor: {r: 1, g: 1, b: 1, a: 1}
   warningColor: {r: 1, g: 0, b: 0, a: 1}
   warningTime: 30

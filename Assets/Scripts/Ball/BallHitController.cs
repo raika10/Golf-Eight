@@ -266,9 +266,9 @@ public class BallHitController : MonoBehaviour
             return;
         }
 
-        // 解除は E キー、またはジャンプで。対象の有無ではキャンセルしない
-        // ＝対象が無くても構え続けられる（離すと空振りになる）。
-        if (CancelPressedThisFrame() || JumpPressedThisFrame())
+        // 解除は E キーのみ。ジャンプでは解除しない（＝ジャンプしても構えを保持できる）。
+        // 対象の有無でもキャンセルしない＝対象が無くても構え続けられる（離すと空振りになる）。
+        if (CancelPressedThisFrame())
         {
             CancelCharge();
             return;
@@ -288,6 +288,14 @@ public class BallHitController : MonoBehaviour
         // 離した瞬間：振り上げ位置から振り下ろし（SwingTimeを1へ動かす）。当たる瞬間にボール発射。
         if (mouse.leftButton.wasReleasedThisFrame)
         {
+            // 空中で離した場合は打てない。チャージを解除して通常へ戻すだけ（ジャンプ中の空振り打ちを禁止）。
+            bool groundedOnRelease = playerController == null || playerController.IsGrounded;
+            if (!groundedOnRelease)
+            {
+                CancelCharge();
+                return;
+            }
+
             if (rig != null)
             {
                 rig.Swing();
@@ -413,13 +421,6 @@ public class BallHitController : MonoBehaviour
     {
         Keyboard keyboard = Keyboard.current;
         return keyboard != null && keyboard[cancelKey].wasPressedThisFrame;
-    }
-
-    /// このフレームでジャンプ入力があったか（チャージ解除の判定に使う）。
-    private bool JumpPressedThisFrame()
-    {
-        Keyboard keyboard = Keyboard.current;
-        return keyboard != null && keyboard.spaceKey.wasPressedThisFrame;
     }
 
     /// 範囲内に対象がいないのにスイングした時：空を切って、よろけ＋後隙（少しの間動けない）をさらす。
