@@ -181,6 +181,12 @@ namespace GolfEight.Network
             ReturnToTitle(TitlePrefs.GameStateConnectionFailed);
         }
 
+        /// ゴール画面などから「意図的にTitleへ戻る」ときに呼ぶ。GameStateはNormalのまま戻す。
+        public void ReturnToTitleManually()
+        {
+            ReturnToTitle(TitlePrefs.GameStateNormal);
+        }
+
         /// Title へ戻す共通処理。gameState に書き込む値で「失敗(-1)」か「通常(0=キャンセル)」かを分ける。
         private void ReturnToTitle(int gameState)
         {
