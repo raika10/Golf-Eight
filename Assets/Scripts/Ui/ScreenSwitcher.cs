@@ -13,6 +13,7 @@ public class ScreenSwitcher : MonoBehaviour
     public TMP_InputField portInputField;
     public TMP_InputField ipInputField;
     public TMP_Text errorText;
+    public TMP_InputField portInputField_host;
 
     public string GameSceneName = "GameScene";
 
@@ -25,6 +26,8 @@ public class ScreenSwitcher : MonoBehaviour
             ipInputField.text = PlayerPrefs.GetString("IP_address", "");
         if (portInputField != null)
             portInputField.text = PlayerPrefs.GetInt("Port", 7770).ToString();
+        if (portInputField_host != null)
+            portInputField_host.text = PlayerPrefs.GetInt("Port", 7770).ToString();
 
         // GameState=-1なら接続失敗→RoomPanelを開いてエラー表示
         if (PlayerPrefs.GetInt("GameState", 0) == -1)
@@ -100,6 +103,8 @@ public class ScreenSwitcher : MonoBehaviour
         PlayerPrefs.SetString("Name", GetName());
         PlayerPrefs.SetInt("IsHost", 1);
         PlayerPrefs.SetInt("GameState", 0);
+        // ポート番号を保存（入力が無い場合はデフォルト値7770）
+        PlayerPrefs.SetInt("Port", portInputField_host != null ? int.TryParse(portInputField_host.text.Trim(), out int p) ? p : 7770 : 7770);
         PlayerPrefs.Save();
         SceneManager.LoadScene(GameSceneName);
     }
@@ -116,6 +121,7 @@ public class ScreenSwitcher : MonoBehaviour
         PlayerPrefs.SetInt("IsHost", 0);
         PlayerPrefs.SetInt("GameState", 0);
         PlayerPrefs.Save();
+        Debug.Log($"Joining game at {ipAddress}:{port} as {GetName()}");
         SceneManager.LoadScene(GameSceneName);
     }
 

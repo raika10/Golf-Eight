@@ -29,6 +29,9 @@ namespace GolfEight.Network
         [Tooltip("ローディング文字のフォント。未割当ならシーン内の日本語対応フォントを自動採用する。")]
         [SerializeField] private TMP_FontAsset loadingFont;
 
+        [Tooltip("ロビーの「ゲームスタート」バナー。未割当なら実行時に自動生成する（通常は未割当のままでよい）。")]
+        [SerializeField] private LobbyStartUI lobbyStartUI;
+
         private bool isHost;
         private bool returningToTitle; // Title へ戻す処理の多重実行を防ぐ
         private bool clientConnected;  // ローカルクライアントの接続が確立したか
@@ -53,6 +56,13 @@ namespace GolfEight.Network
             }
             loadingScreen.OnCancelRequested += HandleCancelRequested;
             loadingScreen.Show(isHost ? "サーバーを起動中" : "接続中");
+
+            // ロビーの「ゲームスタート」バナーも同様に自動生成する。中身はロビー状態になってから
+            // GameManager を見つけて出す（未接続の間は何も表示しない）。
+            if (lobbyStartUI == null)
+            {
+                lobbyStartUI = LobbyStartUI.Create(loadingFont);
+            }
 
             // 起動の直前に購読する。StartConnection より前に購読しておかないと、
             // 早い段階の状態変化（即時失敗など）を取りこぼす可能性があるため。
