@@ -543,7 +543,7 @@ MonoBehaviour:
   _initializeOrder: 0
   _preventDespawnOnDisconnect: 0
   _defaultDespawnType: 0
-  _initializedTimestamp: -8584170845823727235
+  _initializedTimestamp: -8584169040283379768
 --- !u!114 &244619813035071223
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -644,7 +644,7 @@ MonoBehaviour:
   swingHitVoice: {fileID: 8300000, guid: 2cf3cecceb1a7ec408b900426d193769, type: 3}
   fallVoiceY: -5
   fallVoiceRearmY: -8
-  volume: 0.6
+  volume: 0.3
   spatialBlend: 1
   minDistance: 3
   maxDistance: 40

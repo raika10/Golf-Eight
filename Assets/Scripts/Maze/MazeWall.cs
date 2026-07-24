@@ -50,6 +50,23 @@ public class MazeWall : MonoBehaviour
     [Tooltip("SEやパーティクル再生などをここに接続")]
     public UnityEvent onDestroyed;
 
+    [Header("効果音")]
+    [Tooltip("削れた瞬間に鳴らす。複数指定するとランダムに1つ再生する")]
+    public AudioClip[] hitClips;
+
+    [SerializeField, Range(0f, 1f)] private float sfxVolume = 1f;
+    [Tooltip("ヒット音のピッチのランダム幅（単調にならないよう毎回少しずらす）")]
+    [SerializeField] private float pitchRandomRange = 0.08f;
+    [Tooltip("この距離までは減衰しない (m)")]
+    [SerializeField] private float minDistance = 2f;
+    [Tooltip("この距離で聞こえなくなる (m)")]
+    [SerializeField] private float maxDistance = 25f;
+    [Tooltip("連続ヒットで音が割れないための最小間隔 (s)")]
+    [SerializeField] private float minHitInterval = 0.05f;
+
+    private AudioSource hitSource;
+    private float lastHitSoundTime = -999f;
+
     // ── 部分破壊用の内部状態（ボクセル化してから使う） ──────────────
     bool voxelized;                 // 一度でも当たってボクセル化したか
     bool[,,] alive;                 // 各セルが残っているか
@@ -69,6 +86,35 @@ public class MazeWall : MonoBehaviour
     static readonly List<Vector2> uvBuf = new List<Vector2>();
     static readonly List<int> tBuf = new List<int>();
 
+    void Awake()
+    {
+        hitSource = GetComponent<AudioSource>();
+        if (hitSource == null)
+            hitSource = gameObject.AddComponent<AudioSource>();
+        hitSource.playOnAwake = false;
+        hitSource.loop = false;
+        hitSource.spatialBlend = 1f; // 3Dサウンド。壁の位置から聞こえるようにする
+        hitSource.rolloffMode = AudioRolloffMode.Linear;
+        hitSource.minDistance = minDistance;
+        hitSource.maxDistance = maxDistance;
+    }
+
+    /// 削れた瞬間のヒット音を鳴らす。連続ヒットで音が割れないよう最小間隔を空ける。
+    void PlayHitSound()
+    {
+        if (hitClips == null || hitClips.Length == 0 || hitSource == null)
+            return;
+        if (Time.time - lastHitSoundTime < minHitInterval)
+            return;
+        lastHitSoundTime = Time.time;
+
+        AudioClip clip = hitClips[Random.Range(0, hitClips.Length)];
+        if (clip == null)
+            return;
+        hitSource.pitch = 1f + Random.Range(-pitchRandomRange, pitchRandomRange);
+        hitSource.PlayOneShot(clip, sfxVolume);
+    }
+
     /// <summary>ダメージを与える（衝撃情報なし）。</summary>
     public void TakeDamage(int amount)
     {
@@ -85,6 +131,7 @@ public class MazeWall : MonoBehaviour
             return;
         }
 
+        PlayHitSound();
         hp -= amount;
         if (hp <= 0)
             DestroyWall(impactPoint, impactVelocity);
@@ -200,6 +247,8 @@ public class MazeWall : MonoBehaviour
         }
 
         aliveCount -= removed;
+
+        PlayHitSound();
 
         if (group != null)
         {

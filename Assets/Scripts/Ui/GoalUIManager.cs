@@ -44,8 +44,22 @@ public class GoalUIManager : MonoBehaviour
             ShowGoal();
             return;
         }
-        ShowResult(GolfEight.Network.PlayerColors.GetDisplayName(winnerIndex) + " の勝ち！",
+        ShowResult(ResolveWinnerLabel(winnerIndex) + " の勝ち！",
                    GolfEight.Network.PlayerColors.Get(winnerIndex));
+    }
+
+    /// 勝者の表示名を決める。Title で入力した名前があればそれを、
+    /// 無ければ従来どおり色ベースの既定名（「プレイヤー1（赤）」）を使う。
+    private string ResolveWinnerLabel(int winnerIndex)
+    {
+        foreach (var sync in FindObjectsByType<GolfEight.Network.PlayerNetworkSync>(FindObjectsSortMode.None))
+        {
+            if (sync.PlayerIndex == winnerIndex && !string.IsNullOrEmpty(sync.PlayerName))
+            {
+                return sync.PlayerName;
+            }
+        }
+        return GolfEight.Network.PlayerColors.GetDisplayName(winnerIndex);
     }
 
     /// 制限時間切れの表示を出す。誰もカップインしていないので「ゴール」とは出し分ける。
@@ -114,5 +128,19 @@ public class GoalUIManager : MonoBehaviour
 #else
         Application.Quit();
 #endif
+    }
+
+    public void OnBackToTitle()
+    {
+        var bootstrap = FindFirstObjectByType<GolfEight.Network.NetworkBootstrap>();
+        if (bootstrap != null)
+        {
+            bootstrap.ReturnToTitleManually();
+        }
+        else
+        {
+            // NetworkBootstrapが存在しない構成（オフラインテスト等）向けの保険
+            SceneManager.LoadScene("TitleScene");
+        }
     }
 }
